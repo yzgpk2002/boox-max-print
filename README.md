@@ -1,0 +1,72 @@
+# BOOX Max Print
+
+让旧款 BOOX Max 接收电脑打印的 PDF，也能显示低频更新的电脑画面。面向 **Windows + Android 4.4.4 BOOX Max**，保留原生 PDF 阅读体验。
+
+![BOOX 图片发送器图标](desktop/assets/boox-images.png)
+
+当前基线 **0.4.2**：Windows 图片发送器 0.4.2.0，Android 接收器 0.4.0。公开仓库提供源码与构建工具，不包含个人配对、签名密钥、打印文件或编译产物。
+
+## 两种用途
+
+**打印阅读**：电脑网页或文档选择“打印 → BOOX Max”，Windows IPP 驱动生成 PDF，经 Wi-Fi（优先）或 USB ADB（备用）送到 BOOX，再用原生阅读器打开，可翻页阅读。BOOX 不需要 Mopria，也不需要升级到 Android 8。
+
+**低频画面显示**：主显示器整屏、框选区域或单张图片，经独立 Wi-Fi 图片通道显示在 BOOX。支持横竖屏、文字增强、光标、暂停和恢复；这是静态帧更新，不是视频级投屏。
+
+## 当前功能
+
+- Windows 虚拟打印机、PDF 本地留存、无线身份验证及回执校验。
+- 首次 USB 配对，此后同网段 Wi-Fi 发现；上传已开始后不盲目改走 USB 重复打开。
+- Windows 当前用户登录后自动启动桥接；BOOX 已启用接收器开机连网后恢复。
+- 图片默认主屏整屏、默认 0.5 秒检查，间隔可选 0.5 / 1 / 2 / 5 / 10 秒。
+- 竖屏 1200×1600 / 横屏 1600×1200；记忆方向、增强、灰度、对比度和光标选项。
+- 原图、文字清晰、文字加深、黑白高对比四档；后台处理、最新帧替换、无损灰度 PNG。
+- 暂停先隐藏电脑控制窗，再补送最后一张干净截图；PDF 到达自动暂停图片模式。
+- Ctrl+Alt+B 发送截图；Ctrl+Alt+P 暂停/继续。应用与托盘使用猫头鹰电子书图标。
+
+## 文档导航
+
+| 文档 | 内容 |
+|---|---|
+| [部署与构建](docs/DEPLOYMENT.md) | 新电脑依赖、SDK 路径、构建、首次配对、队列、自启动、升级 |
+| [技术架构与协议](docs/ARCHITECTURE.md) | 模块、端口、认证、IPP、图片会话、并发、状态与文件生命周期 |
+| [维护与日志](docs/OPERATIONS.md) | 日志位置和含义、健康检查、排障、清理、重启与脱敏 |
+| [版本与开发日志](CHANGELOG.md) | 已实现功能、性能修复、反馈及版本边界 |
+| [实机验收记录](docs/VALIDATION.md) | 通过项、测量口径、历史问题、未覆盖范围 |
+| [结构化验收日志](docs/logs/acceptance-2026-11-16.json) | 可比较的脱敏验收摘要与性能样本 |
+
+## 快速开始
+
+先按 [部署文档](docs/DEPLOYMENT.md) 安装 Node.js、构建 Windows/Android 程序、用 USB 配对。项目无 npm 第三方依赖。
+
+```powershell
+node --test tests/*.test.mjs
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/build-images.ps1
+```
+
+首次安装打印队列运行 `Install-Printer.cmd`，按系统提示授权；以后从应用打印菜单选择 BOOX Max。手动恢复服务用 `Start-Printer.cmd`。登录自启动由 `tools/install-startup.ps1` 创建。
+
+图片发送运行 `Start-Images.cmd`，选方向与增强后点“开始自动”。勾选“显示光标”可叠加当前指针，默认关闭。运行时会收至托盘，双击图标打开；打开软件不会自动截图。BOOX 图片页面可暂停、适合宽度、放大、拖动、旋转、重绘和主动保存。
+
+## 已测结果与限制
+
+2026-11-16 已验证浏览器网页打印、两页系统打印、USB 与拔线后的 Wi-Fi 打印、原生阅读器打开、登录自启动及 BOOX 开机连网恢复。用户确认横竖屏和 0.5 秒图片更新可用。Word/WPS、其他 BOOX 型号、长期休眠和跨网段不在已验收范围内。
+
+0.5 秒是检查间隔，不保证每秒两次完整墨水屏刷新。文字样例中，新增强流程耗时已接近旧原图，但无线回执仍有约 2.2 秒长尾；所有性能结论均区分电脑处理、接收回执和物理显示。
+
+字体对照中用户选择 **Noto Sans SC Medium**。应在电脑源应用选择字体/增大字号，保留灰度更利于平滑边缘；截图发送器不会替换截图内的文字，纯黑白模式可能更显锯齿。本仓库不附带字体。
+
+当前不提供手机系统打印发现、BOOX 独立 IPP/AirPrint、外网穿透或 TLS。电脑桥接只监听回环，BOOX 接收服务用于可信局域网。首次使用必须阅读部署与信任边界说明。
+
+## 目录
+
+```text
+desktop/    Node.js 桥接与 C# WinForms 发送器
+android/    Android 4.4 接收服务与图片界面
+tools/      构建、安装、自启动、配对和实机测试
+tests/      协议、图像、设置和桌面生命周期回归
+docs/       技术文档与脱敏验收日志
+```
+
+`.local/`、`spool/`、根目录 `logs/`、`build/`、`dist/` 和本机 `.lnk` 均不提交。生成产物的日志与保留规则见维护文档。
+
+设计方向参考 [InkPrint](https://github.com/charlie-xing/InkPrint) 的打印到电纸书流程；本项目的 Node.js、C# 和 Android 接收实现独立编写，没有复制其 Rust 源码。Windows 驱动、Android SDK、Java、Node.js 与字体均由各自提供方分发，不捆绑进仓库。

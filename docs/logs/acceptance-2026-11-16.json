@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-16",
+  "timezone": "Asia/Shanghai",
+  "kind": "curated_acceptance_summary",
+  "source": "docs/VALIDATION.md and local generated test outputs; not raw telemetry",
+  "versions": {"desktopSender": "0.4.2.0", "androidReceiver": "0.4.0", "androidVersionCode": 3},
+  "environment": {"host": "Windows", "node": "24.14", "device": "BOOX Max", "android": "4.4.4", "abi": "armeabi-v7a", "screen": [1200, 1600]},
+  "redacted": ["Wi-Fi SSID", "device and PC private addresses", "device identifiers", "pairing secrets", "document names", "personal paths"],
+  "passed": [
+    {"check": "node_protocol_tests", "count": 7, "scope": "IPP, HTTP PDF flow, Wi-Fi identity and receipt, image session and orientation"},
+    {"check": "usb_pdf_print", "scope": "two-page synthetic document, digest check, native reader launch"},
+    {"check": "wifi_pdf_without_usb", "scope": "two-page synthetic document, SHA-256 receipt, reader launch"},
+    {"check": "browser_print", "evidence": "user confirmed PDF displays in built-in reader and can scroll"},
+    {"check": "startup", "scope": "Windows user-login shortcut, BOOX actual reboot and connectivity recovery"},
+    {"check": "image_session", "scope": "duplicate frame, stale sequence, pause rejection, explicit resume, PDF interruption"},
+    {"check": "orientation_and_half_second_interval", "evidence": "user confirmed portrait, landscape and 0.5-second updates"},
+    {"check": "optimized_pixels", "scope": "four modes, random color/gray reference, odd strides, boundaries, indexed PNG equivalence"},
+    {"check": "desktop_lifecycle", "scope": "500ms default, settings reopening, cursor option, single worker, stale capture discard, latest pending only"},
+    {"check": "native_cursor_overlay", "evidence": "interactive desktop produced 80 non-white pixels without moving the cursor"}
+  ],
+  "performance": {
+    "fixture": "generated 1200x1600 text page",
+    "measurement": "three warm runs, median milliseconds; excludes capture, Wi-Fi and physical display",
+    "modeOrder": ["original", "clear", "deep", "binary"],
+    "oldPipelineMedianMs": [108, 134, 164, 176],
+    "newPipelineMedianMs": [91, 118, 109, 88],
+    "oldPipelineIncludesAlwaysDecodedPreview": true,
+    "newPipelineMatchesHiddenWindowOperation": true,
+    "oldPngBytes": [36377, 47347, 47819, 26777],
+    "newPngBytes": [23784, 28663, 28880, 17053],
+    "newReceiverReceiptMs": [135, 147, 166, 179, 163, 192, 158, 2215, 181, 142, 202, 179],
+    "interpretation": "CPU and payload improved; a 2215ms receipt outlier remains. Receipt is not physical e-ink completion. Machine load affects timings."
+  },
+  "incidents": [
+    {"id": "kitkat-shell-md5", "symptom": "missing wc caused false USB copy failure", "resolution": "use existing device md5 for copy verification"},
+    {"id": "boot-filter", "symptom": "old firmware filters third-party BOOT_COMPLETED", "resolution": "internally installed enabled receiver also handles connectivity broadcasts; reboot tested"},
+    {"id": "pause-tcp-reset", "symptom": "rejecting before draining upload lost error reply", "resolution": "drain bounded body, check pause, recheck before commit"},
+    {"id": "enhancement-latency", "symptom": "user observed roughly two-second enhanced-frame delay", "resolution": "background processing, parallel enhancement, indexed PNG, deferred preview; wireless tail remains"},
+    {"id": "cursor-test-dialog", "symptom": "isolated cursor test failure raised a .NET dialog", "resolution": "handle failure and exit nonzero, rerun native cursor check in interactive desktop; passed"},
+    {"id": "font-jagged-edges", "symptom": "user noticed jagged text in last binary-mode page", "resolution": "grayscale font comparison; user chose Noto Sans SC Medium; source application fonts not automatically replaced"}
+  ],
+  "notYetVerified": ["Word/WPS individually", "other BOOX models", "long-duration sleep and recovery", "all Windows versions", "final 0.4.2 live cursor alignment and sustained physical responsiveness"],
+  "privacy": "Raw logs, PDFs, screenshots, build outputs and configuration are not included."
+}
