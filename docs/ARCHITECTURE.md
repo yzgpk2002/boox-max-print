@@ -1,6 +1,6 @@
 # 技术架构与协议
 
-对应公开基线 0.5.4：Windows 图片发送器 0.5.4.0 / Android 接收器 0.5.4。目标设备是实测 Android 4.4.4、1200×1600 的 BOOX Max，不代表所有 BOOX 固件均兼容。
+对应公开基线 0.5.5：Windows 图片发送器 0.5.5.0 / Android 接收器 0.5.5。目标设备是实测 Android 4.4.4、1200×1600 的 BOOX Max，不代表所有 BOOX 固件均兼容。
 
 ## 1. 两条独立数据通道
 
@@ -14,6 +14,8 @@ WinForms 发送器 → 截图/文件 → 后台处理 → 127.0.0.1:8633
 ```
 
 BOOX 不充当 Android PrintService 插件，不调用 PrintManager 向实体打印机输出。虚拟打印机安装在 Windows。BOOX 网络端点是本项目的接收协议，不是独立 IPP/AirPrint 服务。图片通道只有 Wi-Fi，没有 USB 图片传输后备。
+
+0.5.5：图片客户端把配置路径传给 `findReceiver`，认证发现的新地址原子保存，后续 10 秒检查使用新地址；并发 state/frame 请求共享一次连接检查。接收器以 `viewerOpening` 区分尚在启动与真正隐藏的图片页：异步 startActivity 发出后，后续帧只更新最新位图，直到 onResume 才解除启动标记，避免 singleTask 被重复启动触发离页暂停。状态接口暴露 viewerOpening 供诊断。
 
 | 模块 | 文件 | 职责 |
 |---|---|---|

@@ -1,0 +1,37 @@
+{
+  "version": "0.5.5",
+  "date": "2026-11-17",
+  "timezone": "Asia/Shanghai",
+  "before": {
+    "receiverVersion": "0.5.4",
+    "acceptedFramesBeforeUnexpectedPause": 2,
+    "nextFrameError": "Image session paused or changed",
+    "duplicateImageActivityStartsObserved": true,
+    "visibleButPausedReason": "left",
+    "discoveredRouterAddressWasNotPersisted": true
+  },
+  "after": {
+    "tinyFixtureFrames": 36,
+    "normalFixtureFrames": 36,
+    "orientationsPerFixture": ["landscape", "portrait", "landscape"],
+    "allRunsReceivingAndVisible": true,
+    "normalFixtureReceiptMedianMs": 292,
+    "normalFixtureReceiptMaximumMs": 2676,
+    "homeAndExplicitResumeRegression": "passed",
+    "rememberedAddressMatchesDevice": true,
+    "nodeTestsPassed": 13
+  },
+  "deployment": {
+    "windowsVersion": "0.5.5.0",
+    "androidVersion": "0.5.5",
+    "androidVersionCode": 6,
+    "windowsSha256": "BB6C515D9EBBDFD536237171885B6B3364D7AC67FB296F0574B13CEA6E6EB2F6",
+    "apkSha256": "731FBEB1D370FD51A9379495770775AFB237B20D7DEA5CEC74214D924F1D4EE9",
+    "settingsAndPairingPreserved": true
+  },
+  "limits": [
+    "Receipt times do not measure physical e-ink settling",
+    "Startup and orientation changes still take time",
+    "Fixed 1.2-second home-test wait initially failed; bounded visibility/paused-state polling then passed"
+  ]
+}

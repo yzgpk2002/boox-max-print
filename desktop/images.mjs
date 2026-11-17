@@ -14,12 +14,18 @@ export function validateFrame(session, sequence, body, type) {
 }
 
 export class ImageClient {
-  constructor(configPath) { this.configPath=configPath; this.receiver=null; this.checked=0; }
+  constructor(configPath, locate=findReceiver) { this.configPath=configPath; this.receiver=null; this.checked=0; this.locate=locate; this.connecting=null; }
   async connect() {
+    if(this.connecting)return this.connecting;
+    this.connecting=this.resolveConnection();
+    try{return await this.connecting;}finally{this.connecting=null;}
+  }
+  async resolveConnection() {
     const config=await readWifiConfig(this.configPath);
     if(!config) throw new Error('Pair BOOX over USB before sending images');
     if(!this.receiver || Date.now()-this.checked>10000) {
-      this.receiver=await findReceiver(config); this.checked=Date.now();
+      // Persist authenticated discovery so periodic checks do not return to a previous router's IP.
+      this.receiver=await this.locate(config,this.configPath); this.checked=Date.now();
       if(!this.receiver) throw new Error('BOOX is offline; keep both devices on the same Wi-Fi');
       if(!this.receiver.images) {this.receiver=null;throw new Error('Update BOOX Max Print to version 0.4.0');}
     }

@@ -2,6 +2,8 @@
 
 ## 新选项排查
 
+0.5.5 修复前几张后画面不再更新：若接口响应正常、viewerVisible=true 但 paused=true/reason=left，不应直接归因于 Wi-Fi 信号。旧版图片页启动期重复 startActivity 会误触发离页暂停。两端更新至 0.5.5；更换路由器时客户端现在会记住认证发现的新 IP。`node tools/verify-image-startup.mjs` 用生成测试卡执行横/竖/横连续发送；先运行 `tools/make-image-fixtures.ps1`，加 `--tiny` 可加速触发启动窗口。测试会覆盖设备当前图片，结束返回桌面，日志写在 build。
+
 0.5.4：“BOOX 回桌面”在控制窗口和托盘均可用；会同时停止发送与翻页，接收服务保持运行。提示失败时检查 Wi-Fi 和接收器版本（需要 0.5.4），电脑不会自动恢复截图。真机测试入口 `node tools/verify-home.mjs` 只发生成测试图，结束在桌面；报告写入 build。
 
 托盘图标消失但进程还在：再次运行 Start-Images.cmd，新版会唤回原窗口并重建图标；Windows 任务栏重建也会触发恢复。若明确提示“原发送器未响应”，才考虑结束指定 BooxImages 进程重开。单实例、丢图标恢复和返回桌面队列回归见 `tools/test-recovery-home.ps1`；它使用模拟 HTTP、生成图片和自身测试窗口，不重启 Explorer。

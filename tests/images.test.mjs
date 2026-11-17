@@ -8,6 +8,24 @@ import { once } from 'node:events';
 import { createHash, createHmac } from 'node:crypto';
 import { ImageClient, validateFrame, IMAGE_INTERVALS, DEFAULT_IMAGE_INTERVAL } from '../desktop/images.mjs';
 
+test('image discovery persists router change and shares concurrent connection checks',async t=>{
+  const folder=await fs.mkdtemp(path.join(os.tmpdir(),'boox-reconnect-'));
+  const configPath=path.join(folder,'wifi.json');
+  await fs.writeFile(configPath,JSON.stringify({deviceId:'test-device-reconnect',token:'a'.repeat(64),host:'192.0.2.1'}));
+  t.after(()=>fs.rm(folder,{recursive:true,force:true}));
+  let probes=0;const hosts=[];
+  const client=new ImageClient(configPath,async(config,persistPath)=>{
+    probes++;hosts.push(config.host);assert.equal(persistPath,configPath);
+    await new Promise(r=>setTimeout(r,20));
+    config.host='192.0.2.2';await fs.writeFile(persistPath,JSON.stringify(config));
+    return {host:config.host,images:true};
+  });
+  await Promise.all([client.connect(),client.connect(),client.connect()]);assert.equal(probes,1);
+  assert.equal(JSON.parse(await fs.readFile(configPath,'utf8')).host,'192.0.2.2');
+  client.checked=0;await Promise.all([client.connect(),client.connect()]);
+  assert.equal(probes,2);assert.deepEqual(hosts,['192.0.2.1','192.0.2.2']);
+});
+
 test('image session checks identity, frame receipts, pause errors, and permits retry of the same sequence',async t=>{
   const folder=await fs.mkdtemp(path.join(os.tmpdir(),'boox-images-'));
   const config={deviceId:'images-test-device',token:'b'.repeat(64),host:'127.0.0.1'};

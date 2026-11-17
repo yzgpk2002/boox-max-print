@@ -11,8 +11,8 @@ using System.Collections.Generic;
 using System.Web.Script.Serialization;
 using System.Runtime.InteropServices;
 
-[assembly:System.Reflection.AssemblyVersion("0.5.4.0")]
-[assembly:System.Reflection.AssemblyFileVersion("0.5.4.0")]
+[assembly:System.Reflection.AssemblyVersion("0.5.5.0")]
+[assembly:System.Reflection.AssemblyFileVersion("0.5.5.0")]
 
 namespace BooxImages {
     static class Program {

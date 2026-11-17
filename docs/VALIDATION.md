@@ -111,6 +111,14 @@
 - 证据：`build/image-performance.txt`、`build/baseline-frames/transfer.json`、`build/optimized-frames/transfer.json`、`build/sender-lifecycle/cursor.png`。物理屏幕的连续跟手体验、最终新界面的按钮布局及实际截图光标位置仍需用户实测确认。
 - 最终已替换 `dist/BooxImages.exe`，部署文件 SHA-256 与构建文件一致，文件版本 0.4.2.0；新版进程启动并响应。仅重启图片桥接，健康接口默认间隔确认为 0.5；项目中创建 `BOOX Images.lnk` 使用新图标。BOOX 保留已暂停的字体对照页，未开启自动截图。
 
+## 首帧后停止更新修复（0.5.5，2026-11-17）
+
+- 用户报告 BOOX 画面卡住且重新开始无效；现场 state 响应约 31–132ms，paused=true/reason=left/viewerVisible=true。旧版启动日志有重复 ImageActivity START；小图突发测试可复现接受 2 帧后第 3 帧被暂停拒收。
+- 同时发现配对配置仍保留旧路由器地址：客户端发现新地址却没有保存，周期检查反复回旧地址并曾误报离线。修复后确认持久地址与设备当前地址匹配；公开日志不包含地址或凭据。
+- 新版 `--tiny` 连续 36 帧、普通生成测试卡连续 36 帧，均覆盖横/竖/横三个启动周期。各轮结束 paused=false/reason=receiving/viewerVisible=true，序号 12。普通卡回执中位 292ms、最大 2676ms；启动和转屏有延迟，回执不等于物理刷新完成。
+- 返回桌面、拒收暂停帧、显式恢复显示均通过。原测试固定等待 1.2 秒曾失败，改为最多 8 秒轮询实际可见及暂停状态后通过，没有将首次失败记为成功。
+- Node 13 项通过，包括地址持久化和并发检查去重。Windows 0.5.5.0 与 Android 0.5.5/versionCode 6 已部署，配对与设置保留；没有修改系统网络或 ADB 映射。详见 [0.5.5 日志](logs/acceptance-0.5.5-2026-11-17.json)。
+
 ## 返回桌面及托盘恢复（0.5.4，2026-11-17）
 
 - `tools/test-recovery-home.ps1` 通过：有在途/等待帧时返回桌面，等待前者完成并丢弃后者；截图与翻页定时器停止；没有本地会话时也发送有效 home 请求。模拟传输不作为真机证据。

@@ -4,7 +4,7 @@
 
 ![BOOX 图片发送器图标](desktop/assets/boox-images.png)
 
-当前基线 **0.5.4**：Windows 图片发送器 0.5.4.0，Android 接收器 0.5.4。公开仓库提供源码与构建工具，不包含个人配对、签名密钥、打印文件或编译产物。
+当前基线 **0.5.5**：Windows 图片发送器 0.5.5.0，Android 接收器 0.5.5。公开仓库提供源码与构建工具，不包含个人配对、签名密钥、打印文件或编译产物。
 
 ## 两种用途
 
@@ -38,6 +38,7 @@
 | [实机验收记录](docs/VALIDATION.md) | 通过项、测量口径、历史问题、未覆盖范围 |
 | [0.5.3 验收日志](docs/logs/acceptance-0.5.3-2026-11-17.json) | 普通 Chrome 用户确认与独立翻页暂停回归；另有 [0.5.1 Chrome 实测](docs/logs/acceptance-0.5.1-2026-11-17.json)、[0.5.0 功能验收](docs/logs/acceptance-0.5.0-2026-11-16.json)与 [0.4.2 性能样本](docs/logs/acceptance-2026-11-16.json) |
 | [0.5.4 验收日志](docs/logs/acceptance-0.5.4-2026-11-17.json) | 返回桌面 Wi-Fi 真机验收、单实例窗口/托盘恢复 |
+| [0.5.5 验收日志](docs/logs/acceptance-0.5.5-2026-11-17.json) | 修复图片页启动误暂停及更换路由器后重复检查旧地址；72 帧真机连续验收 |
 
 ## 快速开始
 

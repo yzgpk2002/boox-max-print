@@ -15,10 +15,11 @@ final class ImageSession {
     static ImageActivity viewer;
     static final RefreshPolicy refresh=new RefreshPolicy();
     static boolean fullRefreshPending;
+    static boolean viewerOpening;
 
     static JSONObject state() throws Exception {
         return new JSONObject().put("session",id).put("paused",paused).put("reason",reason)
-            .put("sequence",sequence).put("sha256",digest).put("orientation",orientation).put("viewerVisible",viewer!=null && viewer.visible)
+            .put("sequence",sequence).put("sha256",digest).put("orientation",orientation).put("viewerVisible",viewer!=null && viewer.visible).put("viewerOpening",viewerOpening)
             .put("fullRefreshEvery",refresh.every).put("fullRefreshSupported",EinkRefresh.supported())
             .put("fullRefreshCount",refresh.requests).put("acceptedFrames",refresh.frames).put("fullRefreshError",EinkRefresh.error());
     }
@@ -65,11 +66,14 @@ final class ImageSession {
         if(frame<sequence)throw new Exception("Stale image frame");
         if(frame==sequence){if(!sha.equals(digest))throw new Exception("Frame sequence conflict");return false;}
         // A hidden viewer never reopens except after an explicit start/resume.
-        boolean open=viewer==null || !viewer.visible;
+        // startActivity is asynchronous: subsequent frames must not relaunch singleTask
+        // before onResume, which would produce another onPause and stop this session.
+        boolean open=!viewerOpening && (viewer==null || !viewer.visible);
         if(open) {
             Intent intent=new Intent(context,ImageActivity.class);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TOP);
-            context.startActivity(intent);
+            viewerOpening=true;
+            try{context.startActivity(intent);}catch(RuntimeException e){viewerOpening=false;throw e;}
         }
         bitmap=next; sequence=frame; digest=sha;
         if(refresh.frame())fullRefreshPending=true;

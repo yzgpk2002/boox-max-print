@@ -44,9 +44,9 @@ public class ImageActivity extends Activity {
         return ok;
     }
     void applyOrientation(){int desired="landscape".equals(ImageSession.orientation)?ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE:ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;if(getRequestedOrientation()!=desired)setRequestedOrientation(desired);}
-    @Override protected void onResume(){super.onResume();visible=true;ImageSession.viewer=this;applyOrientation();showFrame();}
+    @Override protected void onResume(){super.onResume();visible=true;ImageSession.viewer=this;ImageSession.viewerOpening=false;applyOrientation();showFrame();}
     @Override protected void onPause(){visible=false;if(!isChangingConfigurations())ImageSession.pause("left");super.onPause();}
-    @Override protected void onDestroy(){if(ImageSession.viewer==this)ImageSession.viewer=null;super.onDestroy();}
+    @Override protected void onDestroy(){if(ImageSession.viewer==this){ImageSession.viewer=null;ImageSession.viewerOpening=false;}super.onDestroy();}
     @Override public void onBackPressed(){ImageSession.pause("left");super.onBackPressed();}
     private void saveImage(){
         final Bitmap copy=ImageSession.bitmap;if(copy==null)return;
