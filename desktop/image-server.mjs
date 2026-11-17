@@ -24,7 +24,7 @@ const server=http.createServer(async(req,res)=>{
   try {
     if(req.method==='GET'&&req.url==='/state'){json(res,200,await client.state());return;}
     if(req.method==='POST'&&req.url==='/control'){
-      const value=JSON.parse((await body(req,4096)).toString());json(res,200,await client.control(value.action,value.session,value.orientation));return;
+      const value=JSON.parse((await body(req,4096)).toString());json(res,200,await client.control(value.action,value.session,value.orientation,value.fullRefreshEvery));return;
     }
     if(req.method==='POST'&&req.url==='/frame'){
       if(uploading){json(res,429,{error:'A frame is already being sent'});return;}

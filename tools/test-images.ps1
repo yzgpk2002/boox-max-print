@@ -19,9 +19,11 @@ try {
     Run '.\build\BaselineBenchmark.exe' @('build\baseline-frames')
     Compile @('tests\ImagePipelineTests.cs','tests\ImageEnhancementReference.cs','desktop\ImageEnhancement.cs','desktop\ImagePipeline.cs','desktop\ImageSettings.cs') 'build\ImagePipelineTests.exe'
     Run '.\build\ImagePipelineTests.exe' @('build\optimized-frames')
+    Compile @('tests\ImageSettingsTests.cs','desktop\ImageSettings.cs','desktop\AutoScroller.cs') 'build\ImageSettingsTests.exe' @('/r:System.Windows.Forms.dll')
+    Run '.\build\ImageSettingsTests.exe'
     if($Desktop) {
         # Requires the interactive desktop for native cursor/screen reads. Does not move the cursor.
-        Compile @('tests\SenderLifecycleTests.cs','desktop\ImageSender.cs','desktop\ImageEnhancement.cs','desktop\ImagePipeline.cs','desktop\ImageSettings.cs','desktop\ScreenCapture.cs') 'build\SenderLifecycleTests.exe' @('/r:System.Windows.Forms.dll','/r:System.Net.Http.dll','/resource:desktop\assets\boox-images.ico,BooxImages.AppIcon','/resource:desktop\assets\boox-tray.ico,BooxImages.TrayIcon','/main:SenderLifecycleTests')
+        Compile @('tests\SenderLifecycleTests.cs','desktop\ImageSender.cs','desktop\ImageEnhancement.cs','desktop\ImagePipeline.cs','desktop\ImageSettings.cs','desktop\ScreenCapture.cs','desktop\AutoScroller.cs') 'build\SenderLifecycleTests.exe' @('/r:System.Windows.Forms.dll','/r:System.Net.Http.dll','/resource:desktop\assets\boox-images.ico,BooxImages.AppIcon','/resource:desktop\assets\boox-tray.ico,BooxImages.TrayIcon','/main:SenderLifecycleTests')
         Run '.\build\SenderLifecycleTests.exe'
     }
 } finally {Pop-Location}

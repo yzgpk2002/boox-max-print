@@ -29,6 +29,7 @@ public class PrintReceiverService extends Service {
     private Handler main;
     private String token,deviceId;
     private final Semaphore imageUpload=new Semaphore(1);
+    private final Object pdfCommitLock=new Object();
 
     public static String address(Context context){
         try {int ip=((WifiManager)context.getApplicationContext().getSystemService(WIFI_SERVICE)).getConnectionInfo().getIpAddress();
@@ -103,7 +104,7 @@ public class PrintReceiverService extends Service {
                 String challenge=request[1].substring("/health?challenge=".length());
                 if(!challenge.matches("[0-9a-f]{32}"))throw new IOException("Bad challenge");
                 Mac mac=Mac.getInstance("HmacSHA256");mac.init(new SecretKeySpec(token.getBytes("UTF-8"),"HmacSHA256"));
-                respond(out,200,new JSONObject().put("deviceId",deviceId).put("proof",hex(mac.doFinal((deviceId+":"+challenge).getBytes("UTF-8")))).put("ready",Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState())).put("images",true).put("version","0.4.0"));return;
+                respond(out,200,new JSONObject().put("deviceId",deviceId).put("proof",hex(mac.doFinal((deviceId+":"+challenge).getBytes("UTF-8")))).put("ready",Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState())).put("images",true).put("version","0.5.0"));return;
             }
             String authorization=headers.get("authorization");
             if(authorization==null||!MessageDigest.isEqual(authorization.getBytes("UTF-8"),("Bearer "+token).getBytes("UTF-8"))){respond(out,401,new JSONObject().put("error","Pairing required"));return;}
@@ -118,7 +119,21 @@ public class PrintReceiverService extends Service {
             File dir=new File(Environment.getExternalStorageDirectory(),"Documents/BooxMaxPrint");
             if(!dir.isDirectory()&&!dir.mkdirs())throw new IOException("Cannot create print folder");
             if(dir.getUsableSpace()<length+8*1024*1024){respond(out,507,new JSONObject().put("error","BOOX storage full"));return;}
-            String name=request[1].substring("/jobs/".length());File destination=new File(dir,name);
+            String name=request[1].substring("/jobs/".length());
+            String requestedName=DocumentNames.decode(headers.get("x-document-name"),name);
+            SharedPreferences receipts=getSharedPreferences("receipts",0);
+            String storedName;
+            synchronized(pdfCommitLock){
+                storedName=receipts.getString("file:"+name,null);
+                if(storedName==null){
+                    // Keep an already delivered legacy path. A retry cannot move
+                    // the same job to another filename or reopen it under a new key.
+                    storedName=new File(dir,name).exists()?name:requestedName;
+                    if(!receipts.edit().putString("file:"+name,storedName).commit())throw new IOException("Cannot persist PDF destination");
+                }
+            }
+            File destination=new File(dir,storedName);
+            if(!destination.getCanonicalFile().getParentFile().equals(dir.getCanonicalFile()))throw new IOException("Unsafe PDF destination");
             temporary=File.createTempFile("receive-",".part",dir);
             if("100-continue".equalsIgnoreCase(headers.get("expect"))){out.write("HTTP/1.1 100 Continue\r\n\r\n".getBytes("US-ASCII"));out.flush();}
             MessageDigest digest=MessageDigest.getInstance("SHA-256");
@@ -130,15 +145,17 @@ public class PrintReceiverService extends Service {
             try{byte[] head=new byte[5];verify.readFully(head);if(!"%PDF-".equals(new String(head,"US-ASCII")))throw new IOException("Not PDF");
                 int count=(int)Math.min(4096,length);verify.seek(length-count);byte[] tail=new byte[count];verify.readFully(tail);if(!new String(tail,"ISO-8859-1").contains("%%EOF"))throw new IOException("PDF is truncated");
             }finally{verify.close();}
-            // Identical retried transfers are idempotent; never overwrite different content.
-            if(destination.exists()){
-                if(!sha256.equals(hash(destination)))throw new IOException("Job name already exists with different content");
-                temporary.delete();temporary=null;
-            }else{if(!temporary.renameTo(destination))throw new IOException("Cannot commit PDF");temporary=null;}
-            SharedPreferences receipts=getSharedPreferences("receipts",0);
-            boolean wasOpened=receipts.getBoolean(name,false);
-            if(!wasOpened){openPdf(destination);receipts.edit().putBoolean(name,true).commit();}
-            status="\u5df2\u63a5\u6536\uff1a"+name;
+            boolean wasOpened;
+            synchronized(pdfCommitLock){
+                // Identical retried transfers are idempotent; never overwrite different content.
+                if(destination.exists()){
+                    if(!sha256.equals(hash(destination)))throw new IOException("Job name already exists with different content");
+                    temporary.delete();temporary=null;
+                }else{if(!temporary.renameTo(destination))throw new IOException("Cannot commit PDF");temporary=null;}
+                wasOpened=receipts.getBoolean(name,false);
+                if(!wasOpened){openPdf(destination);if(!receipts.edit().putBoolean(name,true).commit())throw new IOException("PDF opened; receipt persistence failed");}
+            }
+            status="\u5df2\u63a5\u6536\uff1a"+destination.getName();
             respond(out,200,new JSONObject().put("deviceId",deviceId).put("bytes",length).put("sha256",sha256).put("path",destination.getAbsolutePath()).put("opened",true).put("duplicate",wasOpened));
         }catch(Exception e){status=e.getMessage();try{respond(socket.getOutputStream(),500,new JSONObject().put("error",e.getMessage()));}catch(Exception ignored){}}
         finally{if(temporary!=null)temporary.delete();clients.remove(socket);try{socket.close();}catch(Exception ignored){}}
@@ -175,7 +192,7 @@ public class PrintReceiverService extends Service {
         if(!"POST".equals(request[0])){respond(out,404,new JSONObject().put("error","Unknown image endpoint"));return;}
         if("/images/control".equals(request[1])) {
             final JSONObject body=new JSONObject(new String(imageBody(headers,in,4096),"UTF-8"));
-            try {respond(out,200,onMain(new Callable<JSONObject>(){public JSONObject call()throws Exception{ImageSession.control(body.getString("action"),body.getString("session"),body.optString("orientation",""));return ImageSession.state().put("deviceId",deviceId);}}));}
+            try {respond(out,200,onMain(new Callable<JSONObject>(){public JSONObject call()throws Exception{ImageSession.control(body.getString("action"),body.getString("session"),body.optString("orientation",""),body.optInt("fullRefreshEvery",-1));return ImageSession.state().put("deviceId",deviceId);}}));}
             catch(Exception e){respond(out,409,new JSONObject().put("error",e.getMessage()));}return;
         }
         if(!"/images/frame".equals(request[1])){respond(out,404,new JSONObject().put("error","Unknown image endpoint"));return;}

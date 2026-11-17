@@ -1,5 +1,5 @@
 // IPP binary encoding (RFC 8010). No native or third-party dependencies.
-export const TAG = { integer: 0x21, boolean: 0x22, enum: 0x23, text: 0x41, name: 0x42, keyword: 0x44, uri: 0x45, charset: 0x47, language: 0x48, mime: 0x49 };
+export const TAG = { integer: 0x21, boolean: 0x22, enum: 0x23, textWithLanguage: 0x35, nameWithLanguage: 0x36, text: 0x41, name: 0x42, keyword: 0x44, uri: 0x45, charset: 0x47, language: 0x48, mime: 0x49 };
 export function parseIpp(data) {
   if (data.length < 9) throw new Error('Truncated IPP header');
   const request = { major: data[0], minor: data[1], operation: data.readUInt16BE(2), id: data.readInt32BE(4), attributes: {}, bodyOffset: 0 };
@@ -20,6 +20,16 @@ export function parseIpp(data) {
     if (tag === 0x37) { depth--; if (depth < 0) throw new Error('Invalid collection'); continue; }
     if (depth) continue;
     let value = raw.toString('utf8');
+    // RFC 8010: localized values contain language-length, language, text-length,
+    // text. Treating the whole value as UTF-8 leaks binary lengths into titles.
+    if(tag===TAG.textWithLanguage||tag===TAG.nameWithLanguage) {
+      if(raw.length<4)throw new Error('Truncated localized IPP value');
+      const languageLength=raw.readUInt16BE(0),textOffset=languageLength+4;
+      if(languageLength>32767||textOffset>raw.length)throw new Error('Invalid IPP language length');
+      const textLength=raw.readUInt16BE(languageLength+2);
+      if(textLength>32767||textOffset+textLength!==raw.length)throw new Error('Invalid localized IPP text length');
+      value=new TextDecoder('utf-8',{fatal:true}).decode(raw.subarray(textOffset));
+    }
     if ((tag === TAG.integer || tag === TAG.enum) && vl === 4) value = raw.readInt32BE();
     if (tag === TAG.boolean && vl === 1) value = raw[0] !== 0;
     if (name) (request.attributes[name] ??= []).push(value);

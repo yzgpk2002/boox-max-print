@@ -23,11 +23,19 @@ class SenderLifecycleTests {
                 using(var form=new SenderForm(root)) {
                     ((Timer)Get(form,"pollTimer")).Stop();
                     Check(((Timer)Get(form,"captureTimer")).Interval==500,"Default interval must be 500ms");
-                    Check(((ComboBox)Get(form,"interval")).SelectedIndex==0,"Default interval selector");
+                    Check(((ComboBox)Get(form,"interval")).SelectedIndex==2,"Default interval selector");
                     Check(!(bool)Get(form,"automatic"),"Opening must not start capture");
                     var cursor=(CheckBox)Get(form,"showCursor");Check(!cursor.Checked,"Cursor default off");cursor.Checked=true;
                     ((ComboBox)Get(form,"direction")).SelectedIndex=1;((ComboBox)Get(form,"enhancement")).SelectedIndex=2;
                     Check(ImageSettings.Load(settings).ShowCursor,"Cursor toggle persisted immediately");
+                    ((ComboBox)Get(form,"interval")).SelectedItem="0.2";
+                    ((CheckBox)Get(form,"autoScroll")).Checked=true;
+                    ((NumericUpDown)Get(form,"scrollSeconds")).Value=1.3m;
+                    ((NumericUpDown)Get(form,"scrollLines")).Value=7;
+                    ((ComboBox)Get(form,"scrollMode")).SelectedIndex=1;
+                    ((NumericUpDown)Get(form,"fullRefreshEvery")).Value=4;
+                    Set(form,"fullScreen",false);Set(form,"region",new Rectangle(0,0,50,60));Call(form,"SaveSettings");
+                    Check(!((Timer)Get(form,"scrollTimer")).Enabled&&!((AutoScroller)Get(form,"scroller")).Armed,"Restoring/enabling option alone must not inject input");
                     // Hold a capture across a settings generation change. Its old pixels must be discarded.
                     Set(form,"session",new string('a',32));Set(form,"busy",true);Set(form,"fullScreen",false);Set(form,"region",new Rectangle(0,0,16,16));
                     Task first=(Task)Call(form,"CaptureTick");Task overlapping=(Task)Call(form,"CaptureTick");Check(Object.ReferenceEquals(first,overlapping),"Only one capture worker permitted");
@@ -43,10 +51,14 @@ class SenderLifecycleTests {
                     Check(((ComboBox)Get(restored,"direction")).SelectedIndex==1,"Restored orientation");
                     Check(((ComboBox)Get(restored,"enhancement")).SelectedIndex==2,"Restored enhancement");
                     Check(((CheckBox)Get(restored,"showCursor")).Checked,"Restored cursor option");
-                    Check(((Timer)Get(restored,"captureTimer")).Interval==500,"Reopen default interval");
+                    Check(((Timer)Get(restored,"captureTimer")).Interval==200,"Reopen chosen interval");
+                    Check(!(bool)Get(restored,"fullScreen")&&((Rectangle)Get(restored,"region")).Width==50,"Restore selected source bounds");
+                    Check(((CheckBox)Get(restored,"autoScroll")).Checked&&((NumericUpDown)Get(restored,"scrollSeconds")).Value==1.3m&&((NumericUpDown)Get(restored,"scrollLines")).Value==7&&((ComboBox)Get(restored,"scrollMode")).SelectedIndex==1,"Restore all scroll controls");
+                    Check(((NumericUpDown)Get(restored,"fullRefreshEvery")).Value==4,"Restore full refresh interval");
+                    Check(!((Timer)Get(restored,"scrollTimer")).Enabled&&!((AutoScroller)Get(restored,"scroller")).Armed&&!(bool)Get(restored,"automatic"),"Reopening stays idle even with auto-scroll preference enabled");
                     ((NotifyIcon)Get(restored,"tray")).Dispose();
                 }
-                Console.WriteLine("PASS: hidden form lifecycle, default 0.5s, cursor/rotation/enhancement persistence, one worker, stale capture discarded, latest frame only");
+                Console.WriteLine("PASS: hidden form lifecycle, default 0.5s, every control/source restored, no startup input, one worker, stale capture discarded, latest frame only");
                 using(var cursorImage=new Bitmap(128,128)) {
                     using(var graphics=Graphics.FromImage(cursorImage)){graphics.Clear(Color.White);Point point=Cursor.Position;ScreenCapture.DrawCursor(graphics,new Point(point.X-32,point.Y-32));}
                     int changed=0;for(int y=0;y<128;y++)for(int x=0;x<128;x++)if(cursorImage.GetPixel(x,y).ToArgb()!=Color.White.ToArgb())changed++;

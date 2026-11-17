@@ -1,5 +1,13 @@
 # 维护、日志与排障
 
+## 0.5.0 新选项排查
+
+- 自动翻页不动：点击开始/继续后，在 3 秒准备时间内点击源网页/文档正文；切换窗口或打开控制窗后需要继续以重新锁定。底部单独显示翻页状态，`logs/scroll.log` 记录锁定和停止原因。系统滚轮设为整页/禁用时，按行模式会提示停止。某些源应用可能不处理定向窗口消息，不能仅凭发送函数返回成功判断已经滚动。Chrome 专用测试见 `tools/test-chrome-scroll.ps1`，同时观察 `tests/fixtures/chrome-scroll.html` 中的计数和位移。
+- 全刷：每 N 张实际新图计数；画面不变时不会累积。0 关闭定期全刷，“立即全刷”仍可用。状态 fullRefreshCount 只统计成功调用，fullRefreshError 记录接口错误。BOOX 日志标签 BooxMaxPrint 的 `Full refresh requested` 是调用记录。
+- 文件名：检查任务元数据的 documentName、devicePath、titleRepair。`repaired-windows-title-low-byte-loss` 表示命中已知损坏，originalFile 指向保留原件。不要删除原件以排障；跳过原因不表示页面损坏。旧文件或阅读器缓存不会自动改名。
+- 定期全刷实机测试：先运行 `tools/make-image-fixtures.ps1`，再运行 `node tools/verify-refresh.mjs`；会用生成测试卡覆盖当前 BOOX 图片，结束后暂停，报告保存在 build。仅在准备验证时执行。
+- 交互自动翻页测试：`tools/test-auto-scroll.ps1` 仅创建独立生成文本窗口；需要把该测试窗口置前，会等待最多 60 秒，否则在发输入前失败。它不验证浏览器/Word/WPS 的实现差异。
+
 本文区分开发记录和运行日志：`CHANGELOG.md` 记录功能与修复；`VALIDATION.md` 记录验证证据；`docs/logs` 存放脱敏后的结构化验收数据。实际运行日志在根目录 `logs/`，不进入 Git。
 
 ## 1. 文件与保留策略
@@ -8,7 +16,7 @@
 |---|---|---|
 | `.local/wifi.json` | 设备身份、配对 token、地址、模式 | 私密，不分享完整文件 |
 | `.local/image-client.json` | 本机图片桥接 URL/key | 私密，本机发送器读取 |
-| `.local/image-settings.json` | 方向、增强、灰度、对比度、光标 | 原子保存；无刷新间隔字段，启动固定默认 0.5 秒 |
+| `.local/image-settings.json` | 全部配置：间隔、整屏/区域、方向、增强、灰度、对比度、光标、自动翻页、全刷 | 修改和退出时原子保存；首次默认 0.5 秒；不恢复自动运行 |
 | `.local/booxmaxprint.keystore` | Android 更新签名 | 私密，丢失会影响覆盖更新 |
 | `.local/storage-reserve-baseline.json` | 专用迁移基线与恢复阶段 | 只在执行迁移脚本时存在，不要随意删除 |
 | `spool/BOOX-*.pdf` | 电脑保留的打印 PDF | 可能包含用户文档；不自动清理 |

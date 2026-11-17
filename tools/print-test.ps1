@@ -1,9 +1,10 @@
+param([string]$DocumentName='BOOX Max - Chinese and multipage test')
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.Drawing
 $doc = New-Object System.Drawing.Printing.PrintDocument
 $doc.PrinterSettings.PrinterName = 'BOOX Max'
 if (!$doc.PrinterSettings.IsValid) { throw 'BOOX Max printer is not installed.' }
-$doc.DocumentName = 'BOOX Max - Chinese and multipage test'
+$doc.DocumentName = $DocumentName
 $doc.PrintController = New-Object System.Drawing.Printing.StandardPrintController
 $doc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(55,55,55,55)
 $script:pageNumber = 0

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-16",
+  "timezone": "Asia/Shanghai",
+  "kind": "curated_acceptance_summary",
+  "versions": {"desktopSender": "0.5.0.0", "androidReceiver": "0.5.0", "androidVersionCode": 4},
+  "passed": {
+    "nodeTests": 12,
+    "imagePixelAndSettingsRegression": true,
+    "desktopLifecycle": true,
+    "javaDocumentNames": true,
+    "javaRefreshPolicy": true,
+    "nativeCursorNonWhitePixels": 134,
+    "deviceRefresh": {"acceptedFrames": 12, "nativeRequests": 4, "supported": true, "checks": ["periodic", "duplicate-idempotency", "manual-while-paused", "disabled", "changed-cadence"]},
+    "chinesePrint": {"pages": 2, "transport": "wifi", "state": 9, "receiptFilenameCorrect": true, "pdfInfoTitleCorrect": true, "originalPrefixPreserved": true, "appendedBytes": 373},
+    "privatePdfOfflineRegression": {"pages": 17, "appendedBytes": 441, "allPageStreamsEqual": true, "textAndGeometryEqual": true, "firstPageRenderEqual": true},
+    "deployedSenderMatchesBuild": true
+  },
+  "pending": ["Source application wheel and PageDown behavior: native test could not gain foreground; computer-use app approval timed out before input", "Physical waveform completion, flash and residual image observation", "0.1/0.2 second sustained operation", "0.5.0 reboot and long-run tests", "Reader title bar visual confirmation"],
+  "measurementLimits": ["Refresh counter records successful API invocation, not hardware completion", "Check interval is not physical FPS", "Print receipt confirms save and reader launch request, not page rendering"],
+  "privacy": "No pairing secrets, addresses, device identifiers, private document titles or contents included"
+}

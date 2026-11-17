@@ -3,6 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import dgram from 'node:dgram';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { validateDocumentName } from './document-name.mjs';
 
 export async function readWifiConfig(file) {
   let config;
@@ -70,11 +71,12 @@ export async function sendWifi(job, spool, receiver, config) {
   if(!/^BOOX-\d{14}-\d+\.pdf$/.test(job.file))throw new Error('Invalid PDF job filename');
   const body=await fs.readFile(path.join(spool,job.file));
   const sha256=createHash('sha256').update(body).digest('hex');
+  const documentHeaders=job.documentName?{'X-Document-Name':encodeURIComponent(validateDocumentName(job.documentName,job.file))}:{};
   // After uploading begins do not silently fall back to USB: a lost response
   // may mean the PDF was already opened. Keep an explicit failure for review.
   const response=await fetch(`http://${receiver.host}:${config.port??8632}/jobs/${job.file}`,{
     method:'POST',redirect:'error',signal:AbortSignal.timeout(180000),
-    headers:{Authorization:`Bearer ${config.token}`,'Content-Type':'application/pdf','Content-Length':String(body.length),'X-Content-Sha256':sha256},body
+    headers:{Authorization:`Bearer ${config.token}`,'Content-Type':'application/pdf','Content-Length':String(body.length),'X-Content-Sha256':sha256,...documentHeaders},body
   });
   const result=await response.json();
   if(!response.ok)throw new Error(`Wi-Fi receiver: ${result.error??response.status}`);

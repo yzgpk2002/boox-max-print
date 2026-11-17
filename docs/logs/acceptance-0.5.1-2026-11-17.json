@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-17",
+  "timezone": "Asia/Shanghai",
+  "kind": "curated_acceptance_summary",
+  "versions": {"desktopSender": "0.5.1.0", "androidReceiver": "0.5.0"},
+  "fixture": "Generated 300-line Chrome webpage; independent DOM event and scrollY observations",
+  "productionFormUsed": true,
+  "ordinarySenderStoppedForIsolatedLiveTests": true,
+  "liveBooxTests": {
+    "lines": {"configuredSeconds": 0.5, "configuredLines": 3, "wheelEvents": 10, "deltaYPerEvent": 100, "startY": 8, "endY": 1008, "frameAcknowledged": true, "pausedAtEnd": true},
+    "page": {"configuredSeconds": 0.5, "pageDownEvents": 9, "viewportHeight": 510, "startY": 0, "endY": 4014, "frameAcknowledged": true, "pausedAtEnd": true}
+  },
+  "controlledFocusSwitch": {"foregroundVerified": true, "scrollDisarmed": true, "timerStopped": true, "subsequentDomEventCountStable": true},
+  "regression": {"nodeTests": 12, "settingsAndForegroundPolicy": true, "deployedBinaryMatchesBuild": true},
+  "deployedSenderSha256": "FF53D8545A8D4BAA9418277DCF55E25E61E8545FE4EB99AB840FF0AD83B64C3A",
+  "limitations": ["No proof of original user's exact failure mechanism without trace", "Does not validate physical e-ink waveform completion", "Nested scroll containers and Word/WPS remain unverified"],
+  "supersedes": "Chrome plain-page pending item in acceptance-0.5.0-2026-11-16.json; other pending items remain"
+}

@@ -7,6 +7,8 @@ import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
 import { parseIpp, first, response, printerAttributes, jobAttributes } from './ipp.mjs';
 import { readWifiConfig, findReceiver, sendWifi } from './wifi.mjs';
+import { makeDocumentName, validateDocumentName, shellQuote, androidFileUri } from './document-name.mjs';
+import { repairPdfTitle } from './pdf-title.mjs';
 
 const exec = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -53,19 +55,22 @@ async function deliver(job) {
       const writable = await adbRun(['shell', 'test -w /sdcard && echo writable']);
       if (!writable.includes('writable')) throw new Error('BOOX storage is unavailable. Turn off USB storage sharing on BOOX, keeping the USB cable connected, then print again.');
       const folder = '/sdcard/Documents/BooxMaxPrint';
-      await adbRun(['shell', 'mkdir', '-p', folder]);
-      const target = `${folder}/${job.file}`;
-      await adbRun(['push', path.join(spool, job.file), `${target}.part`], 180000);
-      if (job.state === 7) { await adbRun(['shell','rm','-f',`${target}.part`]); return; }
-      await adbRun(['shell', 'mv', `${target}.part`, target]);
+      await adbRun(['shell', `mkdir -p ${shellQuote(folder)}`]);
+      const deviceName=job.documentName?validateDocumentName(job.documentName,job.file):job.file;
+      const target = `${folder}/${deviceName}`,temporary=`${folder}/${job.file}.part`;
+      // ADB push keeps the temporary transport name ASCII. Android shell sees
+      // a single properly quoted command when moving/opening the readable name.
+      await adbRun(['push', path.join(spool, job.file), temporary], 180000);
+      if (job.state === 7) { await adbRun(['shell',`rm -f ${shellQuote(temporary)}`]); return; }
+      await adbRun(['shell', `mv ${shellQuote(temporary)} ${shellQuote(target)}`]);
       // KitKat's toolbox has md5, but no wc. Check bytes by digest rather than
       // assuming modern Android shell utilities are installed.
-      const remoteDigest = await adbRun(['shell', 'md5', target]);
+      const remoteDigest = await adbRun(['shell', `md5 ${shellQuote(target)}`]);
       const expectedDigest = createHash('md5').update(await fs.readFile(path.join(spool, job.file))).digest('hex');
       if (remoteDigest.trim().split(/\s+/)[0].toLowerCase() !== expectedDigest) throw new Error('BOOX copy verification failed; local PDF retained');
       job.md5 = expectedDigest;
       job.devicePath = target;
-      const result = await adbRun(['shell','am','start','-W','-a','android.intent.action.VIEW','-d',`file://${target}`,'-t','application/pdf','-n','com.onyx.kreader/.ui.ReaderTabHostActivity']);
+      const result = await adbRun(['shell',`am start -W -a android.intent.action.VIEW -d ${shellQuote(androidFileUri(target))} -t application/pdf -n com.onyx.kreader/.ui.ReaderTabHostActivity`]);
       if (/Error:|Exception|Status:\s*(?!ok)\w+/i.test(result)) throw new Error(`PDF saved, but the reader could not open it: ${result.slice(0, 300)}`);
       job.transport='usb';
       }
@@ -88,7 +93,16 @@ function newJob(request) {
 async function receivePdf(job, bytes) {
   if (bytes.length < 12 || !bytes.subarray(0, 8).toString('ascii').startsWith('%PDF-') || !bytes.subarray(Math.max(0, bytes.length - 4096)).includes(Buffer.from('%%EOF'))) throw new Error('Not a complete PDF document');
   const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
-  job.file = `BOOX-${stamp}-${job.id}.pdf`; job.bytes = bytes.length;
+  job.file = `BOOX-${stamp}-${job.id}.pdf`;
+  job.documentName=makeDocumentName(job.name,job.file);
+  const repaired=repairPdfTitle(bytes,job.name);job.titleRepair=repaired.reason;
+  if(repaired.changed){
+    const originals=path.join(spool,'original');await fs.mkdir(originals,{recursive:true});
+    await fs.writeFile(path.join(originals,job.file),bytes,{flag:'wx'});
+    job.originalFile='original/'+job.file;job.originalSha256=createHash('sha256').update(bytes).digest('hex');
+    bytes=repaired.bytes;
+  }
+  job.bytes = bytes.length;
   await fs.writeFile(path.join(spool, `${job.file}.part`), bytes, { flag: 'wx' });
   await fs.rename(path.join(spool, `${job.file}.part`), path.join(spool, job.file));
   job.state = 3; job.reason = 'job-queued'; job.message = 'Queued for BOOX'; await save(job);

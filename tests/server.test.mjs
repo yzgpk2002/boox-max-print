@@ -6,6 +6,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { attr, TAG, parseIpp } from '../desktop/ipp.mjs';
+import { makePdfFixture } from './pdf-fixture.mjs';
 
 test('IPP HTTP flow, format rejection, multi-step job and durable PDF bytes', async t => {
   const spool = await fs.mkdtemp(path.join(os.tmpdir(),'boox-ipp-test-'));
@@ -44,6 +45,17 @@ test('IPP HTTP flow, format rejection, multi-step job and durable PDF bytes', as
   assert.equal(duplicate.status,0x0404);
   const metadata=JSON.parse(await fs.readFile(path.join(spool,`job-${jobId}.json`),'utf8'));
   assert.deepEqual(await fs.readFile(path.join(spool,metadata.file)),pdf);
+  const unicodeTitle='C:\\private\\\u4e2d\u6587\u6587\u6863.pdf';
+  const driverPdf=makePdfFixture(Buffer.from(unicodeTitle,'latin1'));
+  const repairedJob=await send(2,[attr(TAG.name,'job-name',unicodeTitle)],driverPdf);
+  assert.equal(repairedJob.status,0);
+  const repairedId=repairedJob.attributes['job-id'][0];
+  for(let i=0;i<50;i++){const status=await send(9,[attr(TAG.integer,'job-id',repairedId)]);if(status.attributes['job-state'][0]===9)break;await new Promise(r=>setTimeout(r,10));}
+  const repairedMetadata=JSON.parse(await fs.readFile(path.join(spool,`job-${repairedId}.json`),'utf8'));
+  assert.equal(repairedMetadata.state,9);assert.equal(repairedMetadata.titleRepair,'repaired-windows-title-low-byte-loss');
+  assert.ok(repairedMetadata.documentName.startsWith('\u4e2d\u6587\u6587\u6863 -- BOOX-'));
+  assert.deepEqual(await fs.readFile(path.join(spool,repairedMetadata.originalFile)),driverPdf);
+  const deliveredPdf=await fs.readFile(path.join(spool,repairedMetadata.file));assert.deepEqual(deliveredPdf.subarray(0,driverPdf.length),driverPdf);assert.ok(deliveredPdf.length>driverPdf.length);
   const crossOrigin=await fetch(`${base}/ipp/print`,{method:'POST',headers:{origin:'https://example.com'}});
   assert.equal(crossOrigin.status,403);
 });

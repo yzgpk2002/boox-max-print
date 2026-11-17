@@ -1,6 +1,6 @@
 # 技术架构与协议
 
-对应公开基线 0.4.2：Windows 图片发送器 0.4.2.0 / Android 接收器 0.4.0。目标设备是实测 Android 4.4.4、1200×1600 的 BOOX Max，不代表所有 BOOX 固件均兼容。
+对应公开基线 0.5.1：Windows 图片发送器 0.5.1.0 / Android 接收器 0.5.0。目标设备是实测 Android 4.4.4、1200×1600 的 BOOX Max，不代表所有 BOOX 固件均兼容。
 
 ## 1. 两条独立数据通道
 
@@ -69,7 +69,7 @@ Windows IPP HTTP 请求总量限制为 64MiB（含 IPP 属性）；设备 PDF �
 
 本机 `/control`、`/frame`、`/state` 经桥接转到设备 `/images/control`、`/images/frame`、`/images/state`。本机 `/health` 不要求 token。
 
-控制 JSON 字段：`action`、`session`、可选 `orientation`。action 允许 start/pause/resume/stop/orientation；session 为 32 位小写十六进制；orientation 为 portrait/landscape。orientation 保留暂停状态；stop 与 pause 当前都保留最后画面，不销毁图片。
+控制 JSON 字段：`action`、`session`、可选 `orientation`、`fullRefreshEvery`。action 允许 start/pause/resume/stop/orientation/settings/refresh；session 为 32 位小写十六进制；orientation 为 portrait/landscape。orientation/settings/refresh 保留暂停状态；stop 与 pause 当前都保留最后画面，不销毁图片。fullRefreshEvery 为 0–1000 整数，省略保留现有值，0 关闭定期全刷。
 
 图片上传接受 PNG/JPEG，1 张最多 8MiB。头包括 `X-Image-Session`、`X-Image-Sequence`（正整数）及远端 `X-Content-Sha256`。桥接为远端请求添加 SHA-256。状态/回执字段含 session、sequence、sha256、paused、reason、orientation、viewerVisible；成功上传另含 accepted、bytes、duplicate、deviceId。
 
@@ -101,3 +101,21 @@ Windows IPP HTTP 请求总量限制为 64MiB（含 IPP 属性）；设备 PDF �
 Windows 启动目录快捷方式只在当前用户登录后运行，同时启动两个桥接，不自动截图。Android 应用内部安装，监听 BOOT_COMPLETED、MY_PACKAGE_REPLACED、CONNECTIVITY_CHANGE；在已测旧固件上使用连网广播弥补第三方开机广播过滤。用户手动停用接收会持久化；系统强行停止后需重新启动应用。
 
 PDF 在电脑 spool 和设备 Documents 中持久保存。图片仅保留当前位图，主动点“保存”才写入 Pictures。服务持有前台通知和 Wi-Fi/CPU 唤醒锁，有耗电成本。详见 [部署](DEPLOYMENT.md)、[维护与日志](OPERATIONS.md)、[验收范围](VALIDATION.md)。
+
+## 9. 自动翻页、设置和全局刷新（0.5.0）
+
+`AutoScroller.cs` 在发送器隐藏后记录前台窗口句柄及 PID，通过前台窗口事件监听切换。每次滚动重新检查窗口、PID、焦点子窗口以及 Shift/Ctrl/Alt；暂停、退出或前台改变后解除。只向已验证的焦点子窗口发送带超时的 WM_MOUSEWHEEL 或 PageDown 消息，不移动鼠标，不抢回前台。滚轮按系统每格行数换算；不同源应用可能自行解释消息，因此不保证像素或行数完全一致。滚动定时器不重入；会话/代数改变后不会触发过期截图。未获得首张图片回执或网络退避期间暂缓滚动。
+
+设置修改及退出时原子保存。恢复整屏或有效选区；显示器布局改变使选区越界时回退主屏整屏。旧版 5/10 秒间隔迁移为 0.5 秒。只保存配置，不恢复正在运行的截图/输入任务。
+
+0.5.1 启动截图并启用自动翻页时，隐藏控制窗口后先等待 3 秒，提示用户点击目标正文，再执行前台绑定；该准备期不发送滚动。发送状态和翻页状态分开保存，后续图片回执不会遮盖停止原因。`logs/scroll.log` 记录准备、锁定、停止，不含网页题名。集成测试运行相同 SenderForm/定时器；默认注入 HTTP handler，`-Live` 使用真实桥接并只捕获专用测试浏览器窗口。实际滚动必须另外核对 DOM 事件和 scrollY，不能从 Win32 返回值推断。
+
+`RefreshPolicy` 仅在新帧提交后计数，重复序号不计数。Canvas 完成绘制后请求 `EinkRefresh`，通过反射读取固件 `android.view.View.UI_GC_MODE`、校验 FULL 位并调用 `refreshScreen(int)`。本机只读固件证据显示模式为 0x62（GC16 | FULL | WAIT），经 ViewUpdateHelper 发送到 SurfaceFlinger；没有改写全局刷新模式或系统设置。不能以普通 invalidate 冒充全刷：该固件已处于 dirty 状态的 View 可能跳过后续带模式的 invalidate。
+
+状态新增 `acceptedFrames`、`fullRefreshEvery`、`fullRefreshSupported`、`fullRefreshCount`、`fullRefreshError`。计数表示接口调用成功，不证明物理波形已结束。手动全刷要求图片页面可见，失败显式返回错误。接口不兼容的设备仍可显示图片，但不会声称支持全刷。术语参考 [Onyx 屏幕刷新说明](https://github.com/onyx-intl/OnyxAndroidDemo/blob/master/doc/EPD-Screen-Update.md)，实际调用以本机固件为依据。
+
+## 10. 中文文件名与 PDF 标题
+
+IPP `nameWithLanguage/textWithLanguage` 按 [RFC 8010](https://www.rfc-editor.org/rfc/rfc8010.html) 解码有长度的语言与 UTF-8 文本。传输任务 ID 和本地 spool 文件名仍为 ASCII；新增 `X-Document-Name` 传递百分号编码的 UTF-8 阅读名。两端验证路径、控制字符及字节上限，保留稳定 BOOX 任务后缀避免重名。设备保存任务 ID 到文件名的回执映射，重试不重命名旧任务。USB 路径独立进行 shell 引用和 file URI 编码。
+
+已测 Windows 驱动会把 PDF Info/Title 截为 UTF-16 各字符的低八位，而 IPP 任务标题完整。`pdf-title.mjs` 只在原 Title 与完整任务名的该种损坏形式精确吻合时修复：追加 UTF-16BE BOM Title、Info 对象和增量 xref，不重写原页面或原字节。原件先以独占创建方式保存至 `spool/original`，任务记录 `titleRepair`、`originalFile`、`originalSha256`。未知、签名、加密、XMP、增量历史及非经典 xref 等格式跳过，保留原样；不进行猜测式 GBK 转码。已有设备文件和阅读器缓存不批量修改，可重新打印生成新文件。

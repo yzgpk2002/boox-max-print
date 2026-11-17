@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>BOOX controlled browser test</title>
+<style>body{font:24px sans-serif;padding:12px}aside{position:fixed;right:20px;top:10px;background:white;border:1px solid black;padding:12px;font:16px monospace}</style>
+<body tabindex="0">
+<h1>BOOX generated scroll test</h1>
+<p>Click this page and keep it foreground during the test. Close the ordinary image sender first.</p>
+<aside id="metrics"></aside>
+<script>
+for(let i=0;i<300;i++){const p=document.createElement('p');p.textContent='Generated line '+i;document.body.appendChild(p)}
+window.events=[];window.positions=[];
+function update(){document.querySelector('#metrics').textContent='Y='+Math.round(scrollY)+' wheel='+events.filter(e=>e[0]==='wheel').length+' PageDown='+events.filter(e=>e[1]==='PageDown').length;}
+addEventListener('wheel',e=>{events.push(['wheel',e.deltaY,performance.now()]);update()});
+addEventListener('keydown',e=>{events.push(['key',e.key,performance.now()]);update()});
+addEventListener('scroll',()=>{positions.push([scrollY,performance.now()]);update()});
+document.body.focus();update();
+</script>

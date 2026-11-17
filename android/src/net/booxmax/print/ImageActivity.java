@@ -28,7 +28,7 @@ public class ImageActivity extends Activity {
         button(row,"\u653e\u5927",new Runnable(){public void run(){ImageSession.pause("reading");canvas.zoom=Math.min(4,canvas.zoom*1.5f);canvas.invalidate();}});
         LinearLayout second=new LinearLayout(this);controls.addView(second);
         button(second,"\u65cb\u8f6c",new Runnable(){public void run(){ImageSession.orientation="landscape".equals(ImageSession.orientation)?"portrait":"landscape";applyOrientation();}});
-        button(second,"\u91cd\u7ed8",new Runnable(){public void run(){canvas.invalidate();}});
+        button(second,"\u5168\u5c40\u5237\u65b0",new Runnable(){public void run(){if(!fullRefresh())Toast.makeText(ImageActivity.this,"\u6b64\u56fa\u4ef6\u4e0d\u652f\u6301\u5168\u5c40\u5237\u65b0",Toast.LENGTH_LONG).show();}});
         button(second,"\u4fdd\u5b58",new Runnable(){public void run(){saveImage();}});
         button(second,"\u9000\u51fa",new Runnable(){public void run(){ImageSession.pause("left");finish();}});
         FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM);root.addView(controls,lp);
@@ -37,6 +37,12 @@ public class ImageActivity extends Activity {
     private Button button(LinearLayout row,String title,final Runnable action){Button b=new Button(this);b.setText(title);b.setTextSize(18);row.addView(b,new LinearLayout.LayoutParams(0,-2,1));b.setOnClickListener(new View.OnClickListener(){public void onClick(View v){action.run();}});return b;}
     void updateControls(){if(pause!=null)pause.setText(ImageSession.paused?"\u7ee7\u7eed":"\u6682\u505c");}
     void showFrame(){if(canvas!=null){canvas.reset();updateControls();}}
+    boolean fullRefresh(){
+        if(canvas==null||!visible)return false;
+        boolean ok=EinkRefresh.request(canvas);
+        if(ok){ImageSession.refresh.requested();ImageSession.fullRefreshPending=false;}
+        return ok;
+    }
     void applyOrientation(){int desired="landscape".equals(ImageSession.orientation)?ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE:ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;if(getRequestedOrientation()!=desired)setRequestedOrientation(desired);}
     @Override protected void onResume(){super.onResume();visible=true;ImageSession.viewer=this;applyOrientation();showFrame();}
     @Override protected void onPause(){visible=false;if(!isChangingConfigurations())ImageSession.pause("left");super.onPause();}
@@ -53,6 +59,7 @@ public class ImageActivity extends Activity {
     private class ImageCanvas extends View {
         private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);
         boolean fitWidth=false;float zoom=1,dx=0,dy=0,lastX,lastY,downX,downY;boolean moved;
+        boolean refreshPosted;
         ImageCanvas(){super(ImageActivity.this);setLayerType(View.LAYER_TYPE_SOFTWARE,null);setBackgroundColor(Color.WHITE);}
         void reset(){zoom=1;dx=dy=0;invalidate();}
         @Override protected void onSizeChanged(int w,int h,int ow,int oh){reset();}
@@ -63,6 +70,11 @@ public class ImageActivity extends Activity {
             dx=Math.max(Math.min(0,getWidth()-w),Math.min(0,dx));dy=Math.max(Math.min(0,getHeight()-h),Math.min(0,dy));
             float x=w<getWidth()?(getWidth()-w)/2:dx,y=h<getHeight()?(getHeight()-h)/2:dy;
             c.drawBitmap(b,null,new RectF(x,y,x+w,y+h),paint);
+            // Refresh the rendered buffer after this draw. Ordinary invalidate() is not a GC request.
+            if(ImageSession.fullRefreshPending&&!refreshPosted&&visible) {
+                refreshPosted=true;
+                post(new Runnable(){public void run(){refreshPosted=false;if(!visible)return;ImageSession.fullRefreshPending=false;fullRefresh();}});
+            }
         }
         @Override public boolean onTouchEvent(MotionEvent e){
             if(e.getAction()==MotionEvent.ACTION_DOWN){lastX=downX=e.getX();lastY=downY=e.getY();moved=false;return true;}

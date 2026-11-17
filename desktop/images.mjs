@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readWifiConfig, findReceiver } from './wifi.mjs';
 
-export const IMAGE_INTERVALS = Object.freeze([0.5, 1, 2, 5, 10]);
+export const IMAGE_INTERVALS = Object.freeze([0.1, 0.2, 0.5, 1, 2]);
 export const DEFAULT_IMAGE_INTERVAL = 0.5;
 export function validateFrame(session, sequence, body, type) {
   if (!/^[0-9a-f]{32}$/.test(session) || !Number.isSafeInteger(sequence) || sequence < 1) throw new Error('Invalid image session or sequence');
@@ -40,10 +40,11 @@ export class ImageClient {
     return result;
   }
   state(){return this.request('state');}
-  control(action,session,orientation){
-    if(!['start','pause','resume','stop','orientation'].includes(action)||!/^[0-9a-f]{32}$/.test(session))throw new Error('Invalid image control');
+  control(action,session,orientation,fullRefreshEvery){
+    if(!['start','pause','resume','stop','orientation','settings','refresh'].includes(action)||!/^[0-9a-f]{32}$/.test(session))throw new Error('Invalid image control');
     if(orientation!==undefined&&!['portrait','landscape'].includes(orientation))throw new Error('Invalid image orientation');
-    return this.request('control','POST',JSON.stringify({action,session,orientation}),{'Content-Type':'application/json'});
+    if(fullRefreshEvery!==undefined&&(!Number.isInteger(fullRefreshEvery)||fullRefreshEvery<0||fullRefreshEvery>1000))throw new Error('Invalid full refresh interval');
+    return this.request('control','POST',JSON.stringify({action,session,orientation,fullRefreshEvery}),{'Content-Type':'application/json'});
   }
   async send(session,sequence,body,type='image/png') {
     validateFrame(session,sequence,body,type);
