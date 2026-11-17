@@ -29,6 +29,9 @@ class ImageSettingsTests {
         Check(!AutoScroller.TargetIsCurrent(a,2,a,3,false),"Reused handle/process rejected");
         Check(!AutoScroller.TargetIsCurrent(a,2,a,2,true),"Switching away then back remains disarmed");
         Check(!AutoScroller.TargetIsCurrent(IntPtr.Zero,2,IntPtr.Zero,2,false),"Unarmed input rejected");
+        Check(AutoScroller.EditableControl(50004)&&AutoScroller.EditableControl(50003),"Address/edit and combo controls prohibit browser scrolling");
+        Check(!AutoScroller.EditableControl(50030)&&!AutoScroller.EditableControl(50033),"Document and pane focus are not text entry");
+        using(var scroll=new AutoScroller()){string reason;Check(!scroll.Arm(new IntPtr(-1),out reason)&&!scroll.Armed,"Changed expected foreground refuses arming without sending input");}
         Console.WriteLine("PASS: all settings, legacy defaults, interval migration, monitor validation, scroll scaling and foreground safety policy; no input was injected");
     }
 }

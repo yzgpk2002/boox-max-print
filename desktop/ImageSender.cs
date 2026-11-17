@@ -11,8 +11,8 @@ using System.Collections.Generic;
 using System.Web.Script.Serialization;
 using System.Runtime.InteropServices;
 
-[assembly:System.Reflection.AssemblyVersion("0.5.1.0")]
-[assembly:System.Reflection.AssemblyFileVersion("0.5.1.0")]
+[assembly:System.Reflection.AssemblyVersion("0.5.3.0")]
+[assembly:System.Reflection.AssemblyFileVersion("0.5.3.0")]
 
 namespace BooxImages {
     static class Program {
@@ -38,7 +38,7 @@ namespace BooxImages {
         readonly AutoScroller scroller=new AutoScroller();
         DateTime nextScroll;
         bool ready,syncingRefresh,scrollBusy;
-        string scrollStatus="",transferStatus="";
+        string scrollStatus="",transferStatus="";long scrollSteps;
         readonly string settingsPath;
         readonly Icon appIcon,trayIcon;
         readonly Label status=new Label(),regionLabel=new Label();
@@ -98,7 +98,7 @@ namespace BooxImages {
             scrollMode.DropDownStyle=ComboBoxStyle.DropDownList;scrollMode.Width=110;scrollMode.Items.AddRange(new object[]{"\u6eda\u52a8\u6307\u5b9a\u884c","\u5411\u4e0b\u7ffb\u4e00\u9875"});scrollMode.SelectedIndex=saved.ScrollMode;readingOptions.Controls.Add(scrollMode);
             scrollLines.Minimum=1;scrollLines.Maximum=100;scrollLines.Width=62;scrollLines.Value=saved.ScrollLines;scrollLines.Enabled=saved.ScrollMode==0;readingOptions.Controls.Add(scrollLines);
             readingOptions.Controls.Add(new Label{Text="\u884c\uff08\u6309\u7cfb\u7edf\u6eda\u8f6e\u6362\u7b97\uff09",AutoSize=true,Margin=new Padding(3,8,0,0)});
-            autoScroll.CheckedChanged+=delegate{SaveSettings();StopScrolling();if(automatic)SetStatus("\u81ea\u52a8\u7ffb\u9875\u8bbe\u7f6e\u5df2\u4fdd\u5b58\uff1b\u70b9\u7ee7\u7eed\u9501\u5b9a\u9605\u8bfb\u7a97\u53e3\u3002");};
+            autoScroll.CheckedChanged+=delegate{SaveSettings();StopScrolling();SetScrollStatus(autoScroll.Checked?"\u5df2\u542f\u7528\uff1b\u5728\u9605\u8bfb\u6b63\u6587\u6309 Ctrl+Alt+R \u542f\u52a8\u3002":"\u672a\u542f\u7528\u3002");};
             scrollSeconds.ValueChanged+=delegate{SaveSettings();nextScroll=DateTime.UtcNow.AddSeconds((double)scrollSeconds.Value);};
             scrollLines.ValueChanged+=delegate{SaveSettings();};scrollMode.SelectedIndexChanged+=delegate{scrollLines.Enabled=scrollMode.SelectedIndex==0;SaveSettings();};
             var refreshOptions=new FlowLayoutPanel {Dock=DockStyle.Fill};layout.Controls.Add(refreshOptions);
@@ -108,7 +108,7 @@ namespace BooxImages {
             Add(refreshOptions,"\u7acb\u5373\u5168\u5237",async delegate{await ManualRefresh();});
             refreshOptions.Controls.Add(new Label{Text="\u5f00\u59cb\u540e 3 \u79d2\u5185\u70b9\u51fb\u9605\u8bfb\u6b63\u6587\uff1b\u9501\u5b9a\u540e\u5207\u6362\u7a97\u53e3\u505c\u6b62",AutoSize=true,ForeColor=Color.DimGray,Margin=new Padding(12,8,0,0)});
             fullRefreshEvery.ValueChanged+=async delegate{SaveSettings();await SyncRefreshSettings();};
-            layout.Controls.Add(new Label {Text="\u5feb\u6377\u952e\uff1aCtrl+Alt+B \u53d1\u9001\u622a\u56fe   |   Ctrl+Alt+P \u6682\u505c / \u7ee7\u7eed",Dock=DockStyle.Fill,ForeColor=Color.DimGray});
+            layout.Controls.Add(new Label {Text="Ctrl+Alt+B \u622a\u56fe  |  Ctrl+Alt+P \u6682\u505c/\u7ee7\u7eed  |  Ctrl+Alt+R \u4ece\u5f53\u524d\u7f51\u9875\u5f00\u59cb/\u505c\u6b62\u7ffb\u9875",Dock=DockStyle.Fill,ForeColor=Color.DimGray});
             regionLabel.Dock=DockStyle.Fill;layout.Controls.Add(regionLabel);
             Rectangle restoredRegion;if(saved.TryRestoreRegion(SystemInformation.VirtualScreen,out restoredRegion)){region=restoredRegion;hasRegion=true;fullScreen=false;UpdateRegionLabel();}else{fullScreen=true;UseFullScreen();}
             preview.Dock=DockStyle.Fill;preview.SizeMode=PictureBoxSizeMode.Zoom;preview.BackColor=Color.FromArgb(240,240,240);layout.Controls.Add(preview);
@@ -117,7 +117,8 @@ namespace BooxImages {
             var menu=new ContextMenuStrip();menu.Items.Add("\u6253\u5f00\u63a7\u5236\u7a97\u53e3",null,delegate{ShowWindow();});menu.Items.Add("\u53d1\u9001\u622a\u56fe",null,async delegate{await Begin(false,false);});menu.Items.Add("\u6682\u505c",null,async delegate{await Pause(true);});menu.Items.Add("\u7ee7\u7eed",null,async delegate{await Resume();});menu.Items.Add("\u9000\u51fa",null,delegate{Close();});menu.Items.Add(new ToolStripSeparator());menu.Items.Add(new ToolStripMenuItem("Ctrl+Alt+B  \u53d1\u9001\u622a\u56fe"){Enabled=false});menu.Items.Add(new ToolStripMenuItem("Ctrl+Alt+P  \u6682\u505c / \u7ee7\u7eed"){Enabled=false});tray.ContextMenuStrip=menu;
             captureTimer.Interval=SelectedIntervalMs;captureTimer.Tick+=async delegate{await CaptureTick();};pollTimer.Interval=2000;pollTimer.Tick+=async delegate{await Poll();};pollTimer.Start();
             scrollTimer.Interval=100;scrollTimer.Tick+=async delegate{await ScrollTick();};ready=true;
-            Shown+=delegate {bool a=RegisterHotKey(Handle,1,0x4003,0x42),b=RegisterHotKey(Handle,2,0x4003,0x50);if(!a||!b)SetStatus("\u90e8\u5206\u5feb\u6377\u952e\u88ab\u5360\u7528\uff0c\u8bf7\u4f7f\u7528\u6309\u94ae\u3002");};
+            menu.Items.Add(new ToolStripMenuItem("Ctrl+Alt+R  \u5f53\u524d\u7f51\u9875\u7ffb\u9875"){Enabled=false});
+            Shown+=delegate {bool a=RegisterHotKey(Handle,1,0x4003,0x42),b=RegisterHotKey(Handle,2,0x4003,0x50),c=RegisterHotKey(Handle,3,0x4003,0x52);if(!a||!b||!c)SetStatus("\u90e8\u5206\u5feb\u6377\u952e\u88ab\u5360\u7528\uff0c\u8bf7\u4f7f\u7528\u6309\u94ae\u3002");};
             Resize+=delegate{if(WindowState==FormWindowState.Minimized)Hide();};
         }
         void Add(Control row,string text,EventHandler click){var b=new Button {Text=text,AutoSize=true,Height=34,Margin=new Padding(3)};b.Click+=click;row.Controls.Add(b);}
@@ -126,7 +127,8 @@ namespace BooxImages {
         int SelectedIntervalMs {get{return (int)(double.Parse((string)interval.SelectedItem,System.Globalization.CultureInfo.InvariantCulture)*1000);}}
         void SaveSettings(){if(!ready)return;try{new ImageSettings {Direction=direction.SelectedIndex,Enhancement=enhancement.SelectedIndex,Grayscale=gray.Checked,Contrast=contrast.SelectedIndex,ShowCursor=showCursor.Checked,IntervalSeconds=SelectedIntervalMs/1000.0,FullScreen=fullScreen,RegionX=region.X,RegionY=region.Y,RegionWidth=region.Width,RegionHeight=region.Height,AutoScroll=autoScroll.Checked,ScrollSeconds=(double)scrollSeconds.Value,ScrollLines=(int)scrollLines.Value,ScrollMode=scrollMode.SelectedIndex,FullRefreshEvery=(int)fullRefreshEvery.Value}.Save(settingsPath);}catch(Exception e){SetStatus("\u8bbe\u7f6e\u4fdd\u5b58\u5931\u8d25: "+e.Message);}}
         void StopScrolling(){scrollTimer.Stop();scroller.Stop();}
-        void ArmScrolling(){StopScrolling();if(!automatic||!autoScroll.Checked||closing)return;string reason;if(!scroller.Arm(out reason)){SetScrollStatus(reason);tray.ShowBalloonTip(3000,"BOOX",reason,ToolTipIcon.Warning);return;}SetScrollStatus("\u5df2\u9501\u5b9a\u9605\u8bfb\u7a97\u53e3\uff1b\u5207\u6362\u7a97\u53e3\u540e\u505c\u6b62\u3002");nextScroll=DateTime.UtcNow.AddSeconds((double)scrollSeconds.Value);scrollTimer.Start();}
+        void ArmScrolling(){ArmScrolling(IntPtr.Zero);}
+        void ArmScrolling(IntPtr expected){StopScrolling();if(!automatic||!autoScroll.Checked||closing)return;string reason;if(!scroller.Arm(expected,out reason)){SetScrollStatus(reason);tray.ShowBalloonTip(3000,"BOOX",reason,ToolTipIcon.Warning);return;}scrollSteps=0;SetScrollStatus("\u5df2\u9501\u5b9a\u9605\u8bfb\u7a97\u53e3\uff1b\u7b49\u5f85\u56fe\u7247\u56de\u6267\u540e\u7ffb\u9875\u3002");nextScroll=DateTime.UtcNow.AddSeconds((double)scrollSeconds.Value);scrollTimer.Start();}
         async Task ScrollTick(){
             if(scrollBusy)return;scrollBusy=true;int scrollGeneration=generation;string scrollSession=session;
             try {
@@ -134,6 +136,7 @@ namespace BooxImages {
             if(!scroller.Armed){StopScrolling();SetScrollStatus("\u5df2\u5207\u6362\u7a97\u53e3\uff0c\u81ea\u52a8\u7ffb\u9875\u5df2\u505c\u6b62\uff1b\u70b9\u7ee7\u7eed\u91cd\u65b0\u9009\u5b9a\u9605\u8bfb\u7a97\u53e3\u3002");return;}
             if(DateTime.UtcNow<nextScroll||DateTime.UtcNow<retryAfter||ackHash.Length==0)return;
             string reason;if(!scroller.Step(scrollMode.SelectedIndex==1,(int)scrollLines.Value,out reason)){StopScrolling();SetScrollStatus(reason);return;}
+            scrollSteps++;SetScrollStatus("\u5df2\u53d1\u9001 "+scrollSteps+" \u6b21"+(scrollMode.SelectedIndex==1?"\u6574\u9875\u7ffb\u52a8":"\u6309\u884c\u6eda\u52a8")+"\uff1b\u5207\u6362\u7a97\u53e3\u540e\u505c\u6b62\u3002",scrollSteps==1||scrollSteps%50==0);
             nextScroll=DateTime.UtcNow.AddSeconds((double)scrollSeconds.Value);
             await Task.Delay(70);await captureTask;if(automatic&&!controlling&&!closing&&scroller.Armed&&scrollGeneration==generation&&scrollSession==session)await CaptureTick();
             }finally{scrollBusy=false;}
@@ -150,11 +153,25 @@ namespace BooxImages {
         }
         ImageOptions SnapshotOptions(){return new ImageOptions {Landscape=direction.SelectedIndex==1,Grayscale=gray.Checked,Enhancement=enhancement.SelectedIndex,Contrast=float.Parse((string)contrast.SelectedItem,System.Globalization.CultureInfo.InvariantCulture),ShowCursor=showCursor.Checked};}
         void SetStatus(string text){if(!closing){transferStatus=text;status.Text=text+(scrollStatus.Length==0?"":"\n\u81ea\u52a8\u7ffb\u9875: "+scrollStatus);}}
-        void SetScrollStatus(string text){scrollStatus=text;SetStatus(transferStatus);try{string folder=Path.Combine(Path.GetDirectoryName(settingsPath),"..","logs");Directory.CreateDirectory(folder);File.AppendAllText(Path.Combine(folder,"scroll.log"),DateTime.Now.ToString("o")+" "+text+Environment.NewLine);}catch(IOException){}catch(UnauthorizedAccessException){}}
+        void SetScrollStatus(string text,bool record=true){scrollStatus=text;SetStatus(transferStatus);if(!record)return;try{string folder=Path.Combine(Path.GetDirectoryName(settingsPath),"..","logs");Directory.CreateDirectory(folder);File.AppendAllText(Path.Combine(folder,"scroll.log"),DateTime.Now.ToString("o")+" "+text+" "+scroller.Diagnostic+Environment.NewLine);}catch(IOException){}catch(UnauthorizedAccessException){}}
         protected override void WndProc(ref Message m){
             if(m.Msg==0x312){HandleHotkey(m.WParam.ToInt32());return;}base.WndProc(ref m);
         }
-        async void HandleHotkey(int id){if(id==1)await Begin(false,false);else if(id==2){if(automatic)await Pause(true);else await Resume();}}
+        async void HandleHotkey(int id){if(id==1)await Begin(false,false);else if(id==2){if(automatic)await Pause(true);else await Resume();}else if(id==3)await ReadHere();}
+        void StopReadingOnly(){StopScrolling();SetScrollStatus("\u5df2\u6682\u505c\u7ffb\u9875\uff0c\u56fe\u7247\u7ee7\u7eed\u53d1\u9001\uff1bCtrl+Alt+R \u6062\u590d\u7ffb\u9875\u3002");}
+        async Task ReadHere(){
+            if(controlling||closing)return;
+            if(automatic&&scroller.TargetIsForeground){StopReadingOnly();return;}
+            IntPtr expected=AutoScroller.CurrentWindow;string reason;
+            if(!scroller.Arm(expected,out reason)){SetScrollStatus(reason);tray.ShowBalloonTip(3000,"BOOX",reason,ToolTipIcon.Warning);return;}
+            scroller.Stop();autoScroll.Checked=true;SaveSettings();
+            if(automatic&&session.Length>0){
+                // Wait for hotkey modifiers to be released without stopping capture or changing its session.
+                controlling=true;try{await Task.Delay(300);if(!closing&&automatic)ArmScrolling(expected);}finally{controlling=false;}
+                return;
+            }
+            await BeginCore(true,true,expected);
+        }
         async Task<Dictionary<string,object>> Request(string endpoint,HttpContent content=null){
             using(var response=content==null?await http.GetAsync(baseUrl+endpoint):await http.PostAsync(baseUrl+endpoint,content)){
                 string text=await response.Content.ReadAsStringAsync();var result=json.Deserialize<Dictionary<string,object>>(text);
@@ -185,7 +202,8 @@ namespace BooxImages {
             using(var picker=new RegionPicker()){if(picker.ShowDialog()==DialogResult.OK){region=picker.Selection;hasRegion=true;fullScreen=false;UpdateRegionLabel();SaveSettings();}}
             ShowWindow();
         }
-        async Task Begin(bool auto,bool resume){
+        Task Begin(bool auto,bool resume){return BeginCore(auto,resume,IntPtr.Zero);}
+        async Task BeginCore(bool auto,bool resume,IntPtr expected){
             if(controlling||closing)return;if(fullScreen||!hasRegion)UseFullScreen();
             controlling=true;automatic=false;captureTimer.Stop();StopScrolling();pending=null;generation++;
             try {
@@ -193,8 +211,8 @@ namespace BooxImages {
                 if(newSession){session=Guid.NewGuid().ToString("N");sequence=0;}
                 await Control(newSession?"start":"resume");ackHash="";retryAfter=DateTime.MinValue;automatic=auto;wasAutomatic=auto;
                 Hide();
-                if(auto&&autoScroll.Checked){SetScrollStatus("3 \u79d2\u5185\u70b9\u51fb\u8981\u9605\u8bfb\u7684\u7f51\u9875/\u6587\u6863\u6b63\u6587\uff0c\u7136\u540e\u81ea\u52a8\u9501\u5b9a\u3002");tray.ShowBalloonTip(3000,"BOOX",scrollStatus,ToolTipIcon.Info);await Task.Delay(3000);}else await Task.Delay(200);
-                if(closing)return;if(auto)ArmScrolling();await captureTask;await CaptureTick();if(auto){captureTimer.Start();if(!autoScroll.Checked)tray.ShowBalloonTip(2000,"BOOX Max","\u6b63\u5728\u53d1\u9001\u9009\u5b9a\u533a\u57df\uff0c\u53cc\u51fb\u6258\u76d8\u56fe\u6807\u53ef\u7ba1\u7406\u3002",ToolTipIcon.Info);}else ShowWindow();
+                if(auto&&autoScroll.Checked&&expected==IntPtr.Zero){SetScrollStatus("3 \u79d2\u5185\u70b9\u51fb\u8981\u9605\u8bfb\u7684\u7f51\u9875/\u6587\u6863\u6b63\u6587\uff0c\u7136\u540e\u81ea\u52a8\u9501\u5b9a\u3002");tray.ShowBalloonTip(3000,"BOOX",scrollStatus,ToolTipIcon.Info);await Task.Delay(3000);}else await Task.Delay(300);
+                if(closing)return;if(auto){if(autoScroll.Checked)ArmScrolling(expected);else SetScrollStatus("\u672a\u542f\u7528\uff1b\u5728\u9605\u8bfb\u6b63\u6587\u6309 Ctrl+Alt+R \u542f\u52a8\u3002");}await captureTask;await CaptureTick();if(auto){captureTimer.Start();if(!autoScroll.Checked)tray.ShowBalloonTip(2000,"BOOX Max","\u6b63\u5728\u53d1\u9001\u9009\u5b9a\u533a\u57df\uff0c\u53cc\u51fb\u6258\u76d8\u56fe\u6807\u53ef\u7ba1\u7406\u3002",ToolTipIcon.Info);}else ShowWindow();
             }catch(Exception e){SetStatus(e.Message);ShowWindow();}finally{controlling=false;}
         }
         async Task SendFile(){
@@ -246,6 +264,7 @@ namespace BooxImages {
             if(controlling||closing)return;controlling=true;
             bool captureFinal=cleanFinalFrame&&lastWasCapture&&session.Length>0;
             wasAutomatic=automatic||wasAutomatic;automatic=false;captureTimer.Stop();StopScrolling();pending=null;generation++;
+            if(autoScroll.Checked)SetScrollStatus("\u5df2\u6682\u505c\u7ffb\u9875\uff1b\u5728\u9605\u8bfb\u6b63\u6587\u6309 Ctrl+Alt+R \u6062\u590d\u3002");
             try {
                 if(cleanFinalFrame){WindowState=FormWindowState.Minimized;Hide();await Task.Delay(200);}
                 if(session.Length==0)return;
@@ -273,7 +292,7 @@ namespace BooxImages {
         }
         protected override async void OnFormClosing(FormClosingEventArgs e){
             if(closing){base.OnFormClosing(e);return;}
-            e.Cancel=true;SaveSettings();closing=true;captureTimer.Stop();pollTimer.Stop();StopScrolling();pending=null;generation++;UnregisterHotKey(Handle,1);UnregisterHotKey(Handle,2);tray.Visible=false;tray.Dispose();
+            e.Cancel=true;SaveSettings();closing=true;captureTimer.Stop();pollTimer.Stop();StopScrolling();pending=null;generation++;UnregisterHotKey(Handle,1);UnregisterHotKey(Handle,2);UnregisterHotKey(Handle,3);tray.Visible=false;tray.Dispose();
             if(session.Length>0){try{var pauseRequest=Control("pause");await Task.WhenAny(pauseRequest,Task.Delay(2000));if(pauseRequest.IsFaulted){var ignored=pauseRequest.Exception;}}catch{}}
             Close();
         }

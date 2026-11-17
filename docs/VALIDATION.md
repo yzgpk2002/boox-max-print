@@ -111,6 +111,13 @@
 - 证据：`build/image-performance.txt`、`build/baseline-frames/transfer.json`、`build/optimized-frames/transfer.json`、`build/sender-lifecycle/cursor.png`。物理屏幕的连续跟手体验、最终新界面的按钮布局及实际截图光标位置仍需用户实测确认。
 - 最终已替换 `dist/BooxImages.exe`，部署文件 SHA-256 与构建文件一致，文件版本 0.4.2.0；新版进程启动并响应。仅重启图片桥接，健康接口默认间隔确认为 0.5；项目中创建 `BOOX Images.lnk` 使用新图标。BOOX 保留已暂停的字体对照页，未开启自动截图。
 
+## 普通 Chrome 与独立翻页暂停（0.5.2–0.5.3，2026-11-17）
+
+- 0.5.2：用户对常用 Chrome 的“滚动指定行”和“向下翻一页”明确回复“两种都正常”，同时报告 Ctrl+Alt+R 会停止图片发送。这是用户交互验收，不作为自动化测量值。
+- 0.5.3：确认停止翻页分支误调用整体 Pause；拆分后保留截图定时器、会话、在途和等待图片。已经发送图片时重新启用翻页不重启会话。
+- `tools/test-reading-toggle.ps1` 通过：第一帧在途、第二帧等待时停止翻页，两帧继续送达；第三帧仍送达；没有远端 pause。随后整体暂停使截图停止，并恰好发送一次远端 pause。测试使用生产队列与模拟 HTTP，没有真实屏幕采集或窗口输入。
+- 当前修复的验证范围是发送器暂停状态与传输队列，不将模拟 HTTP 计为新的 BOOX 真机测试。普通 Chrome 两种模式的可用性依据上述用户反馈；其他源应用仍需实测。构建和部署结果见 [结构化日志](logs/acceptance-0.5.3-2026-11-17.json)。
+
 ## Chrome 自动翻页修复验收（0.5.1，2026-11-17）
 
 - 复现与测量使用专门生成的 300 行 Chrome 页面，监听 wheel/keydown/scroll 并读取 scrollY；测试程序只在标题严格匹配的窗口处于前台时开始。测试启动/截图/定时器/暂停直接使用生产 SenderForm，没有用 JavaScript 滚动替代发送器操作。

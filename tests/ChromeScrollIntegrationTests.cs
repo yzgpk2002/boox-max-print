@@ -19,6 +19,14 @@ class ChromeScrollIntegrationTests {
     [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr hwnd,StringBuilder text,int count);
     [StructLayout(LayoutKind.Sequential)] struct Rect {public int Left,Top,Right,Bottom;}
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd,out Rect rect);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd,out uint pid);
+    static bool MatchesTarget(string[] args,StringBuilder title){
+        foreach(string arg in args)if(arg.StartsWith("target=")){
+            string[] pair=arg.Substring(7).Split(':');uint pid;IntPtr hwnd=GetForegroundWindow();GetWindowThreadProcessId(hwnd,out pid);
+            return pair.Length==2&&hwnd==new IntPtr(long.Parse(pair[0]))&&pid==uint.Parse(pair[1]);
+        }
+        return title.ToString()=="BOOX controlled browser test - Google Chrome";
+    }
     static object Get(object x,string n){return x.GetType().GetField(n,BindingFlags.NonPublic|BindingFlags.Instance).GetValue(x);}
     static void Set(object x,string n,object v){x.GetType().GetField(n,BindingFlags.NonPublic|BindingFlags.Instance).SetValue(x,v);}
     static object Call(object x,string n,params object[] args){return x.GetType().GetMethod(n,BindingFlags.NonPublic|BindingFlags.Instance).Invoke(x,args);}
@@ -37,8 +45,8 @@ class ChromeScrollIntegrationTests {
         timer.Tick+=async delegate {timer.Stop();SenderForm form=null;try {
             var title=new StringBuilder(200);
             Console.WriteLine("WAITING: activate the generated BOOX controlled browser test page within 60 seconds; no input until exact target matches.");
-            for(int i=0;i<600;i++){title.Clear();GetWindowText(GetForegroundWindow(),title,title.Capacity);if(title.ToString()=="BOOX controlled browser test - Google Chrome")break;await Task.Delay(100);}
-            Check(title.ToString()=="BOOX controlled browser test - Google Chrome","Only the generated browser test may receive input");
+            for(int i=0;i<600;i++){title.Clear();GetWindowText(GetForegroundWindow(),title,title.Capacity);if(MatchesTarget(args,title))break;await Task.Delay(100);}
+            Check(MatchesTarget(args,title),"Only the generated browser or explicitly selected HWND/PID may receive input");
             string root=Path.GetFullPath("build/chrome-scroll-integration");Directory.CreateDirectory(Path.Combine(root,".local"));
             bool live=Array.IndexOf(args,"live")>=0;
             if(live)File.Copy(".local/image-client.json",Path.Combine(root,".local/image-client.json"),true);
@@ -51,6 +59,7 @@ class ChromeScrollIntegrationTests {
             var transport=new Transport();form=new SenderForm(root,live?null:transport);
             await (Task)Call(form,"Begin",true,false);
             await Task.Delay(live?6000:3500);
+            Console.WriteLine("DIAGNOSTIC: automatic={0}; capture={1}; transfer={2}; scroll={3}",Get(form,"automatic"),Get(form,"capturing"),Get(form,"transferStatus"),Get(form,"scrollStatus"));
             Check((bool)Get(form,"automatic"),"Capture should be running");
             Check(((AutoScroller)Get(form,"scroller")).Armed,"Foreground lock unexpectedly stopped");
             Check(live?((string)Get(form,"ackHash")).Length>0:transport.frames>0,"No frame receipt");

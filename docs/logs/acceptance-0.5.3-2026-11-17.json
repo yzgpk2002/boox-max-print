@@ -1,0 +1,47 @@
+{
+  "version": "0.5.3",
+  "date": "2026-11-17",
+  "timezone": "Asia/Shanghai",
+  "windowsVersion": "0.5.3.0",
+  "androidVersionUnchanged": "0.5.0",
+  "ordinaryChrome": {
+    "testedVersion": "0.5.2.0",
+    "evidence": "user_confirmation",
+    "lineScrolling": "passed",
+    "pageDown": "passed",
+    "reportedRegression": "Ctrl+Alt+R also stopped image sending"
+  },
+  "fix": {
+    "readingToggle": "Stops only scrolling; capture session and frame queue stay active",
+    "rearmWhileStreaming": "Preserves the existing image session",
+    "wholeSessionPause": "Ctrl+Alt+P and Pause button"
+  },
+  "automatedTests": {
+    "readingToggle": {
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/test-reading-toggle.ps1",
+      "result": "passed",
+      "productionQueue": true,
+      "transport": "mock HTTP",
+      "framesDeliveredAcrossReadingPause": 3,
+      "remotePausesFromReadingPause": 0,
+      "remotePausesFromWholeSessionPause": 1,
+      "captureTimerPreserved": true,
+      "generationAndPendingPreserved": true,
+      "realScreenCapture": false,
+      "nativeInputInjected": false
+    },
+    "settingsAndForegroundPolicy": "passed"
+  },
+  "deployment": {
+    "buildAndInstalledSha256": "E2DBF719CD4D3D1AD6224A3E57037B78B987E343B19FB45BE07DE8AEC9C8D459",
+    "hashesMatch": true,
+    "processRunningAndResponding": true,
+    "startsIdle": true,
+    "previousExecutableBackedUpLocally": true,
+    "settingsPreserved": true
+  },
+  "limits": [
+    "No new physical BOOX end-to-end test claimed for 0.5.3",
+    "Other applications and nested scroll containers require separate validation"
+  ]
+}

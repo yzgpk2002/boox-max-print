@@ -8,7 +8,8 @@ Push-Location $projectRoot
 try {
   New-Item -ItemType Directory -Force build | Out-Null
   $compiler=Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-  & $compiler /nologo /unsafe+ /optimize+ /r:System.Drawing.dll /r:System.Web.Extensions.dll /r:System.Windows.Forms.dll /r:System.Net.Http.dll /resource:desktop\assets\boox-images.ico,BooxImages.AppIcon /resource:desktop\assets\boox-tray.ico,BooxImages.TrayIcon /main:ChromeScrollIntegrationTests /out:build\ChromeScrollIntegrationTests.exe tests\ChromeScrollIntegrationTests.cs desktop\ImageSender.cs desktop\ImageEnhancement.cs desktop\ImagePipeline.cs desktop\ImageSettings.cs desktop\ScreenCapture.cs desktop\AutoScroller.cs
+  $uiRefs=@(('/r:'+(Join-Path (Split-Path $compiler) 'WPF\UIAutomationClient.dll')),('/r:'+(Join-Path (Split-Path $compiler) 'WPF\UIAutomationTypes.dll')))
+  & $compiler @uiRefs /nologo /unsafe+ /optimize+ /r:System.Drawing.dll /r:System.Web.Extensions.dll /r:System.Windows.Forms.dll /r:System.Net.Http.dll /resource:desktop\assets\boox-images.ico,BooxImages.AppIcon /resource:desktop\assets\boox-tray.ico,BooxImages.TrayIcon /main:ChromeScrollIntegrationTests /out:build\ChromeScrollIntegrationTests.exe tests\ChromeScrollIntegrationTests.cs desktop\ImageSender.cs desktop\ImageEnhancement.cs desktop\ImagePipeline.cs desktop\ImageSettings.cs desktop\ScreenCapture.cs desktop\AutoScroller.cs
   if($LASTEXITCODE -ne 0){throw 'Chrome integration test compilation failed'}
   $testArgs=@($Mode)
   if($Live){$testArgs+='live'}

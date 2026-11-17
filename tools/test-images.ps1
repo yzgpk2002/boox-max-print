@@ -5,8 +5,9 @@ Push-Location $projectRoot
 try {
     New-Item -ItemType Directory -Force build | Out-Null
     $compiler=Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+    $uiRefs=@(('/r:'+(Join-Path (Split-Path $compiler) 'WPF\UIAutomationClient.dll')),('/r:'+(Join-Path (Split-Path $compiler) 'WPF\UIAutomationTypes.dll')))
     function Compile([string[]]$Sources,[string]$Output,[string[]]$Extra=@()) {
-        & $compiler /nologo /unsafe+ /optimize+ /r:System.Drawing.dll /r:System.Web.Extensions.dll "/out:$Output" @Extra @Sources
+        & $compiler @uiRefs /nologo /unsafe+ /optimize+ /r:System.Drawing.dll /r:System.Web.Extensions.dll "/out:$Output" @Extra @Sources
         if($LASTEXITCODE -ne 0){throw "Compile failed: $Output"}
     }
     function Run([string]$Exe,[string[]]$Arguments=@()) {

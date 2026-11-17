@@ -1,6 +1,6 @@
 # 技术架构与协议
 
-对应公开基线 0.5.1：Windows 图片发送器 0.5.1.0 / Android 接收器 0.5.0。目标设备是实测 Android 4.4.4、1200×1600 的 BOOX Max，不代表所有 BOOX 固件均兼容。
+对应公开基线 0.5.3：Windows 图片发送器 0.5.3.0 / Android 接收器 0.5.0。目标设备是实测 Android 4.4.4、1200×1600 的 BOOX Max，不代表所有 BOOX 固件均兼容。
 
 ## 1. 两条独立数据通道
 
@@ -109,6 +109,8 @@ PDF 在电脑 spool 和设备 Documents 中持久保存。图片仅保留当前�
 设置修改及退出时原子保存。恢复整屏或有效选区；显示器布局改变使选区越界时回退主屏整屏。旧版 5/10 秒间隔迁移为 0.5 秒。只保存配置，不恢复正在运行的截图/输入任务。
 
 0.5.1 启动截图并启用自动翻页时，隐藏控制窗口后先等待 3 秒，提示用户点击目标正文，再执行前台绑定；该准备期不发送滚动。发送状态和翻页状态分开保存，后续图片回执不会遮盖停止原因。`logs/scroll.log` 记录准备、锁定、停止，不含网页题名。集成测试运行相同 SenderForm/定时器；默认注入 HTTP handler，`-Live` 使用真实桥接并只捕获专用测试浏览器窗口。实际滚动必须另外核对 DOM 事件和 scrollY，不能从 Win32 返回值推断。
+
+0.5.2 增加 Ctrl+Alt+R 直接绑定当前正文，连接后复核预期窗口。Chromium 的绑定和每次输入都通过系统 UI Automation 检查焦点，拒绝编辑框/组合框；读焦点失败时停止。0.5.3 将停止翻页拆为 `StopReadingOnly`，只解除目标并停止翻页定时器，保留截图定时器、会话代数、在途和等待图片，不发送远端 pause。已有发送会话时重新绑定也不重启会话；Ctrl+Alt+P 才调用整体 `Pause`。`ReadingToggleTests` 以生成 PNG 和模拟 HTTP 验证上述队列行为。
 
 `RefreshPolicy` 仅在新帧提交后计数，重复序号不计数。Canvas 完成绘制后请求 `EinkRefresh`，通过反射读取固件 `android.view.View.UI_GC_MODE`、校验 FULL 位并调用 `refreshScreen(int)`。本机只读固件证据显示模式为 0x62（GC16 | FULL | WAIT），经 ViewUpdateHelper 发送到 SurfaceFlinger；没有改写全局刷新模式或系统设置。不能以普通 invalidate 冒充全刷：该固件已处于 dirty 状态的 View 可能跳过后续带模式的 invalidate。
 
