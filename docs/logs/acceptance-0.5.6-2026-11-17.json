@@ -1,0 +1,38 @@
+{
+  "version": "0.5.6",
+  "date": "2026-11-17",
+  "timezone": "Asia/Shanghai",
+  "exitTests": {
+    "productionTrayMenuInIsolatedProcess": true,
+    "idleMs": 48,
+    "activeMs": 44,
+    "unresponsiveReceiverMs": 2048,
+    "restartedIdleMs": 31,
+    "singleInstanceOwnershipReleased": true,
+    "originalResidualProcessTriggerReproduced": false
+  },
+  "validation": {
+    "nodeTestsPassed": 16,
+    "connectionButtonAndFooterRegression": "passed",
+    "readingToggleRegression": "passed",
+    "recoveryHomeRegression": "passed",
+    "actualBothWifiNamesReadable": true,
+    "actualWifiNamesMatch": true,
+    "actualAuthenticatedConnection": true,
+    "actualUsbRePairAndWifiVerification": "passed",
+    "liveMouseClickVerified": false
+  },
+  "deployment": {
+    "windowsVersion": "0.5.6.0",
+    "androidVersion": "0.5.6",
+    "androidVersionCode": 7,
+    "windowsSha256": "C5B64DDA16E30E7526E23251E3A9D440ABE0B0A9951FD4571AED6FAB498CDD44",
+    "apkSha256": "2E87D81223249A7EAC909FDCD6213376801208ECB99084346EE6237DB36C5236",
+    "settingsAndPairingIdentityPreserved": true
+  },
+  "limits": [
+    "Original exit residual-process trigger not conclusively reproduced",
+    "Computer Use geometry, screenshot and activation errors prevented live mouse acceptance",
+    "SSID equality does not guarantee LAN reachability; online is separately authenticated"
+  ]
+}

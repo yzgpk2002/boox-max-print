@@ -53,15 +53,19 @@ export async function discoverReceivers(config, timeout=1600) {
     });
   });
 }
-export async function findReceiver(config, configPath) {
-  const known=await probeReceiver(config.host,config);
+export async function findReceiver(config, configPath, operations={}) {
+  const probe=operations.probe??probeReceiver,discover=operations.discover??discoverReceivers;
+  const known=await probe(config.host,config,2500);
   if(known)return known;
-  const discovered=await discoverReceivers(config);
+  // A cold Wi-Fi connection can miss one short probe. Retry the paired address
+  // alongside discovery before declaring it offline; every result remains authenticated.
+  const [retry,discovered]=await Promise.all([probe(config.host,config,5000),discover(config)]);
+  if(retry)return retry;
   for(const host of discovered){
-    const receiver=await probeReceiver(host,config);
+    const receiver=await probe(host,config,5000);
     if(!receiver)continue;
     config.host=host;
-    if(configPath){await fs.writeFile(`${configPath}.tmp`,JSON.stringify(config,null,2));await fs.rename(`${configPath}.tmp`,configPath);}
+    if(configPath){const temporary=`${configPath}.${randomBytes(8).toString('hex')}.tmp`;await fs.writeFile(temporary,JSON.stringify(config,null,2));await fs.rename(temporary,configPath);}
     return receiver;
   }
   return null;

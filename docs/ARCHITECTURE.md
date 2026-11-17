@@ -1,6 +1,6 @@
 # 技术架构与协议
 
-对应公开基线 0.5.5：Windows 图片发送器 0.5.5.0 / Android 接收器 0.5.5。目标设备是实测 Android 4.4.4、1200×1600 的 BOOX Max，不代表所有 BOOX 固件均兼容。
+对应公开基线 0.5.6：Windows 图片发送器 0.5.6.0 / Android 接收器 0.5.6。目标设备是实测 Android 4.4.4、1200×1600 的 BOOX Max，不代表所有 BOOX 固件均兼容。
 
 ## 1. 两条独立数据通道
 
@@ -16,6 +16,10 @@ WinForms 发送器 → 截图/文件 → 后台处理 → 127.0.0.1:8633
 BOOX 不充当 Android PrintService 插件，不调用 PrintManager 向实体打印机输出。虚拟打印机安装在 Windows。BOOX 网络端点是本项目的接收协议，不是独立 IPP/AirPrint 服务。图片通道只有 Wi-Fi，没有 USB 图片传输后备。
 
 0.5.5：图片客户端把配置路径传给 `findReceiver`，认证发现的新地址原子保存，后续 10 秒检查使用新地址；并发 state/frame 请求共享一次连接检查。接收器以 `viewerOpening` 区分尚在启动与真正隐藏的图片页：异步 startActivity 发出后，后续帧只更新最新位图，直到 onResume 才解除启动标记，避免 singleTask 被重复启动触发离页暂停。状态接口暴露 viewerOpening 供诊断。
+
+0.5.6：经过认证的图片/状态响应会更新连接时间；闲置超过 10 秒才需要重新健康探测。首次探测 2.5 秒无结果时，并行重试已配对地址（5 秒）和 UDP 发现。发现结果仍须 HMAC 验证，不把同名 Wi-Fi 当作已连接证据。
+
+本机新增带客户端密钥的 `GET /network` 和 `POST /pair`。前者返回电脑 netsh 读取的 SSID、接收器认证状态及 SSID、配对任务状态；电脑查询缓存 10 秒，UI 约每 5 秒更新。设备 SSID 只出现在认证后的 `/images/state`，不放入公开 health。后者返回 202 并启动有界 USB 配对任务，客户端轮询结果；不接收任意设备序列号或命令参数。指定 BOOX 的 DUMP 保护广播写入原有身份和密钥，认证 Wi-Fi 后报告成功；配对期间拒绝图片上传。
 
 | 模块 | 文件 | 职责 |
 |---|---|---|
@@ -75,7 +79,9 @@ Windows IPP HTTP 请求总量限制为 64MiB（含 IPP 属性）；设备 PDF �
 
 `home` 是经过同样 token 认证的设备级操作，不要求请求 session 等于当前图片会话，因而刚打开电脑端或阅读 PDF 时也可使用。接收器先暂停图片，再用 ACTION_MAIN + CATEGORY_HOME + NEW_TASK 打开系统桌面；不清除配对、不关闭接收服务。电脑端先停止两个定时器、清空等待帧、递增代数使处理中帧失效，等待在途上传结束后发送 home。返回后旧帧因 paused 被拒收，只有显式 start/resume 后才会重新显示。
 
-Windows 单实例仍由 Local 命名 Mutex 保护。新增命名请求事件和 UI 回执事件：重复启动通过原进程 UI 线程恢复窗口与 NotifyIcon，4 秒未获 UI 回执则报告未响应。窗口隐藏时仍可收到请求；后台等待不阻塞 UI。原进程监听 TaskbarCreated 重建图标，不显示控制窗、不重启发送。测试使用唯一事件名，不干扰正常发送器；对真实 UI 线程死锁不自动强杀。
+Windows 单实例仍由 Local 命名 Mutex 保护。命名请求事件和 UI 回执事件用于恢复窗口与 NotifyIcon；正在退出时不发激活成功回执。4 秒未获回执后尝试取得旧实例已经释放/遗弃的互斥锁，只有旧实例仍占用才报告未响应。原进程监听 TaskbarCreated 重建图标，不显示控制窗、不重启发送；不自动强杀真实死锁进程。
+
+退出路径先停止本地任务，再异步等待至多 2 秒远端 pause，取消剩余 HTTP，Close 并明确 ExitThread。窗口关闭时释放定时器、滚动钩子与 HTTP，消息循环返回后释放激活监听和互斥锁。`logs/sender.log` 记录 starting、exit requested、exit network wait finished、form closed、message loop ended，不包含屏幕内容或凭据。
 
 图片上传接受 PNG/JPEG，1 张最多 8MiB。头包括 `X-Image-Session`、`X-Image-Sequence`（正整数）及远端 `X-Content-Sha256`。桥接为远端请求添加 SHA-256。状态/回执字段含 session、sequence、sha256、paused、reason、orientation、viewerVisible；成功上传另含 accepted、bytes、duplicate、deviceId。
 

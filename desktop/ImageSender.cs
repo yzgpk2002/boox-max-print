@@ -11,8 +11,8 @@ using System.Collections.Generic;
 using System.Web.Script.Serialization;
 using System.Runtime.InteropServices;
 
-[assembly:System.Reflection.AssemblyVersion("0.5.5.0")]
-[assembly:System.Reflection.AssemblyFileVersion("0.5.5.0")]
+[assembly:System.Reflection.AssemblyVersion("0.5.6.0")]
+[assembly:System.Reflection.AssemblyFileVersion("0.5.6.0")]
 
 namespace BooxImages {
     static class Program {
@@ -33,8 +33,15 @@ namespace BooxImages {
         [STAThread] static void Main(string[] args) {
             SetProcessDPIAware();Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
             bool created;using(var mutex=new System.Threading.Mutex(true,"Local\\BooxMaxImageSender",out created)) {
-                if(!created){if(!ActivateExisting(ActivationName))MessageBox.Show("\u539f\u53d1\u9001\u5668\u672a\u54cd\u5e94\u6253\u5f00\u8bf7\u6c42\u3002\u8bf7\u5728\u4efb\u52a1\u7ba1\u7406\u5668\u7ed3\u675f BooxImages \u540e\u91cd\u65b0\u6253\u5f00\u3002","BOOX Max Images");return;}
-                try {using(var form=new SenderForm())using(var activation=new WindowActivation(form,ActivationName)){Application.Run(form);}}catch(Exception e){MessageBox.Show(e.Message,"BOOX Max Images");}
+                bool owns=created;
+                if(!created){
+                    if(ActivateExisting(ActivationName))return;
+                    // The previous instance may have been exiting while this launch requested activation.
+                    try{owns=mutex.WaitOne(500);}catch(System.Threading.AbandonedMutexException){owns=true;}
+                    if(!owns){MessageBox.Show("\u539f\u53d1\u9001\u5668\u672a\u54cd\u5e94\u6253\u5f00\u8bf7\u6c42\u3002\u8bf7\u5728\u4efb\u52a1\u7ba1\u7406\u5668\u7ed3\u675f BooxImages \u540e\u91cd\u65b0\u6253\u5f00\u3002","BOOX Max Images");return;}
+                }
+                try {using(var form=new SenderForm())using(var activation=new WindowActivation(form,ActivationName)){Application.Run(form);form.LogLifecycle("message loop ended");}}catch(Exception e){MessageBox.Show(e.Message,"BOOX Max Images");}
+                finally{if(owns)mutex.ReleaseMutex();}
             }
         }
     }
@@ -49,7 +56,7 @@ namespace BooxImages {
             IntPtr handle=form.Handle;
             registration=System.Threading.ThreadPool.RegisterWaitForSingleObject(request,delegate(object state,bool timedOut){
                 if(disposed)return;
-                try{form.BeginInvoke((Action)delegate{if(disposed||form.IsDisposed)return;form.RecoverWindow();if(!disposed)ack.Set();});}catch(InvalidOperationException){}
+                try{form.BeginInvoke((Action)delegate{if(disposed||form.IsDisposed)return;if(form.RecoverWindow()&&!disposed)ack.Set();});}catch(InvalidOperationException){}
             },null,System.Threading.Timeout.Infinite,false);
         }
         public void Dispose(){disposed=true;registration.Unregister(null);request.Dispose();ack.Dispose();}
@@ -66,11 +73,14 @@ namespace BooxImages {
         readonly NumericUpDown scrollSeconds=new NumericUpDown(),scrollLines=new NumericUpDown(),fullRefreshEvery=new NumericUpDown();
         readonly AutoScroller scroller=new AutoScroller();
         DateTime nextScroll;
-        bool ready,syncingRefresh,scrollBusy;
+        bool ready,syncingRefresh,scrollBusy,closeReady;
         string scrollStatus="",transferStatus="";long scrollSteps;
         readonly string settingsPath;
         readonly Icon appIcon,trayIcon;
         readonly Label status=new Label(),regionLabel=new Label();
+        readonly Label networkLabel=new Label();
+        readonly Button pairButton=new Button();
+        bool networkPolling,pairPending;DateTime nextNetwork;
         readonly PictureBox preview=new PictureBox();
         readonly NotifyIcon tray=new NotifyIcon();
         Rectangle region;bool hasRegion,automatic,busy,polling,controlling,closing,wasAutomatic,fullScreen=true,lastWasCapture;
@@ -89,18 +99,19 @@ namespace BooxImages {
             Text="BOOX Max \u56fe\u7247\u53d1\u9001";ClientSize=new Size(940,740);MinimumSize=new Size(940,700);Font=new Font("Microsoft YaHei",10);StartPosition=FormStartPosition.CenterScreen;
             if(root==null)root=Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,".."));
             settingsPath=Path.Combine(root,".local","image-settings.json");var saved=ImageSettings.Load(settingsPath);
+            LogLifecycle("starting");
             var assembly=System.Reflection.Assembly.GetExecutingAssembly();
             using(var stream=assembly.GetManifestResourceStream("BooxImages.AppIcon"))appIcon=new Icon(stream);
             using(var stream=assembly.GetManifestResourceStream("BooxImages.TrayIcon"))trayIcon=new Icon(stream,32,32);
             Icon=appIcon;
             var config=json.Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(root,".local","image-client.json")));
             baseUrl=(string)config["url"];http.Timeout=TimeSpan.FromSeconds(22);http.DefaultRequestHeaders.Add("X-Boox-Client",(string)config["key"]);
-            var layout=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=1,RowCount=10,Padding=new Padding(15)};
-            foreach(int height in new int[]{42,44,44,44,44,44,30,38})layout.RowStyles.Add(new RowStyle(SizeType.Absolute,height));layout.RowStyles.Add(new RowStyle(SizeType.Percent,100));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,66));Controls.Add(layout);
+            var layout=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=1,RowCount=11,Padding=new Padding(15)};
+            foreach(int height in new int[]{42,44,44,44,44,44,30,38})layout.RowStyles.Add(new RowStyle(SizeType.Absolute,height));layout.RowStyles.Add(new RowStyle(SizeType.Percent,100));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,66));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,62));Controls.Add(layout);
             var heading=new Label {Text="\u628a\u7535\u8111\u753b\u9762\u6216\u56fe\u7247\u53d1\u9001\u5230 BOOX",Dock=DockStyle.Fill,Font=new Font(Font.FontFamily,15,FontStyle.Bold)};layout.Controls.Add(heading);
             var actions=new FlowLayoutPanel {Dock=DockStyle.Fill};layout.Controls.Add(actions);
             Add(actions,"\u9009\u62e9\u56fe\u7247",async delegate {await SendFile();});
-            Add(actions,"\u6574\u5c4f",async delegate {if(controlling||closing)return;await Pause();fullScreen=true;UseFullScreen();SaveSettings();});
+            Add(actions,"\u6574\u5c4f",async delegate {if(controlling||closing||pairPending)return;await Pause();fullScreen=true;UseFullScreen();SaveSettings();});
             Add(actions,"\u6846\u9009\u533a\u57df",async delegate {await SelectRegion();});
             Add(actions,"\u53d1\u9001\u4e00\u6b21",async delegate {await Begin(false,false);});
             Add(actions,"\u5f00\u59cb\u81ea\u52a8",async delegate {await Begin(true,false);});
@@ -145,19 +156,49 @@ namespace BooxImages {
             Rectangle restoredRegion;if(saved.TryRestoreRegion(SystemInformation.VirtualScreen,out restoredRegion)){region=restoredRegion;hasRegion=true;fullScreen=false;UpdateRegionLabel();}else{fullScreen=true;UseFullScreen();}
             preview.Dock=DockStyle.Fill;preview.SizeMode=PictureBoxSizeMode.Zoom;preview.BackColor=Color.FromArgb(240,240,240);layout.Controls.Add(preview);
             status.Dock=DockStyle.Fill;status.Text="\u5c31\u7eea\u3002\u70b9\u201c\u5f00\u59cb\u81ea\u52a8\u201d\u5373\u53ef\u53d1\u9001\u4e3b\u663e\u793a\u5668\u6574\u5c4f\u3002";layout.Controls.Add(status);
+            var connection=new Panel{Dock=DockStyle.Fill};networkLabel.Dock=DockStyle.Fill;networkLabel.AutoEllipsis=true;networkLabel.Text="\u6b63\u5728\u68c0\u6d4b\u7535\u8111\u4e0e BOOX \u7684 Wi-Fi...";connection.Controls.Add(networkLabel);
+            pairButton.Text="\u91cd\u65b0\u914d\u5bf9 (USB)";pairButton.Dock=DockStyle.Right;pairButton.Width=150;pairButton.Click+=async delegate{await RePair();};connection.Controls.Add(pairButton);layout.Controls.Add(connection);
             tray.Icon=trayIcon;tray.Text="BOOX Max \u56fe\u7247";tray.Visible=true;tray.DoubleClick+=delegate{ShowWindow();};
             var menu=new ContextMenuStrip();menu.Items.Add("\u6253\u5f00\u63a7\u5236\u7a97\u53e3",null,delegate{ShowWindow();});menu.Items.Add("\u53d1\u9001\u622a\u56fe",null,async delegate{await Begin(false,false);});menu.Items.Add("\u6682\u505c",null,async delegate{await Pause(true);});menu.Items.Add("\u7ee7\u7eed",null,async delegate{await Resume();});menu.Items.Add("\u9000\u51fa",null,delegate{Close();});menu.Items.Add(new ToolStripSeparator());menu.Items.Add(new ToolStripMenuItem("Ctrl+Alt+B  \u53d1\u9001\u622a\u56fe"){Enabled=false});menu.Items.Add(new ToolStripMenuItem("Ctrl+Alt+P  \u6682\u505c / \u7ee7\u7eed"){Enabled=false});tray.ContextMenuStrip=menu;
-            captureTimer.Interval=SelectedIntervalMs;captureTimer.Tick+=async delegate{await CaptureTick();};pollTimer.Interval=2000;pollTimer.Tick+=async delegate{await Poll();};pollTimer.Start();
+            captureTimer.Interval=SelectedIntervalMs;captureTimer.Tick+=async delegate{await CaptureTick();};pollTimer.Interval=2000;pollTimer.Tick+=async delegate{await Poll();await RefreshNetwork();};pollTimer.Start();
             scrollTimer.Interval=100;scrollTimer.Tick+=async delegate{await ScrollTick();};ready=true;
             menu.Items.Add(new ToolStripMenuItem("Ctrl+Alt+R  \u5f53\u524d\u7f51\u9875\u7ffb\u9875"){Enabled=false});
             menu.Items.Insert(4,new ToolStripMenuItem("BOOX \u56de\u684c\u9762",null,async delegate{await ReturnHome();}));
             Shown+=delegate {bool a=RegisterHotKey(Handle,1,0x4003,0x42),b=RegisterHotKey(Handle,2,0x4003,0x50),c=RegisterHotKey(Handle,3,0x4003,0x52);if(!a||!b||!c)SetStatus("\u90e8\u5206\u5feb\u6377\u952e\u88ab\u5360\u7528\uff0c\u8bf7\u4f7f\u7528\u6309\u94ae\u3002");};
             Resize+=delegate{if(WindowState==FormWindowState.Minimized)Hide();};
+            Shown+=async delegate{await RefreshNetwork();};
+        }
+        async Task RefreshNetwork(){
+            if(closing||controlling||networkPolling||DateTime.UtcNow<nextNetwork)return;int observedGeneration=generation;networkPolling=true;nextNetwork=DateTime.UtcNow.AddSeconds(5);
+            try{
+                var data=await Request("/network");if(closing||controlling||observedGeneration!=generation)return;
+                var computer=(Dictionary<string,object>)data["computer"];var boox=(Dictionary<string,object>)data["boox"];var pair=(Dictionary<string,object>)data["pairing"];
+                var names=computer["ssids"] as System.Collections.IEnumerable;var ssids=new List<string>();if(names!=null)foreach(object name in names)ssids.Add(Convert.ToString(name));
+                string pc=ssids.Count>0?String.Join(" / ",ssids):Convert.ToString(computer["status"])=="unavailable"?"\u65e0\u6cd5\u8bfb\u53d6\uff08\u7cfb\u7edf\u6743\u9650\uff09":"\u672a\u8fde\u63a5 Wi-Fi\uff08\u53ef\u4f7f\u7528\u6709\u7ebf\u7f51\u7edc\uff09";
+                bool online=Convert.ToBoolean(boox["online"]);string remote=Convert.ToString(boox["ssid"]);
+                if(remote.Length==0)remote=online?"\u540d\u79f0\u6682\u4e0d\u53ef\u7528":"\u672a\u83b7\u53d6";else if(!online)remote+="\uff08\u4e0a\u6b21\uff09";
+                networkLabel.Text="\u7535\u8111 Wi-Fi: "+pc+"\nBOOX Wi-Fi: "+remote+"  |  "+(online?"\u5df2\u8fde\u63a5":"\u8fde\u63a5\u672a\u6210\u529f\uff0c\u6b63\u5728\u91cd\u8bd5");
+                bool running=Convert.ToBoolean(pair["running"]);pairButton.Enabled=!running&&!pairPending;
+                if(pairPending&&!running){pairPending=false;pairButton.Enabled=true;SetStatus(Convert.ToString(pair["status"])=="success"?"\u914d\u5bf9\u6210\u529f\uff0c\u70b9\u5f00\u59cb\u81ea\u52a8\u7ee7\u7eed\u53d1\u9001\u3002":"\u914d\u5bf9\u672a\u5b8c\u6210: "+Convert.ToString(pair["message"]));}
+            }catch(Exception e){if(!closing)networkLabel.Text="\u8fde\u63a5\u72b6\u6001\u6682\u4e0d\u53ef\u7528: "+e.Message;}
+            finally{networkPolling=false;}
+        }
+        async Task RePair(){
+            if(controlling||closing||pairPending)return;controlling=true;pairButton.Enabled=false;
+            automatic=false;captureTimer.Stop();StopScrolling();pending=null;generation++;
+            try{
+                SetStatus("\u8bf7\u4fdd\u6301 BOOX \u7684 USB \u8c03\u8bd5\u8fde\u63a5\uff0c\u6b63\u5728\u914d\u5bf9...\uff08\u4e0d\u4f1a\u4fee\u6539 Wi-Fi \u8bbe\u7f6e\uff09");
+                await Task.WhenAny(sendingTask,Task.Delay(2000));
+                await Request("/pair",new StringContent("{}",System.Text.Encoding.UTF8,"application/json"));
+                pairPending=true;session="";last=null;ackHash="";nextNetwork=DateTime.MinValue;
+            }catch(Exception e){SetStatus("\u914d\u5bf9\u5931\u8d25: "+e.Message);pairButton.Enabled=true;}
+            finally{controlling=false;}
         }
         void Add(Control row,string text,EventHandler click){var b=new Button {Text=text,AutoSize=true,Height=34,Margin=new Padding(3)};b.Click+=click;row.Controls.Add(b);}
+        internal void LogLifecycle(string stage){try{string folder=Path.Combine(Path.GetDirectoryName(settingsPath),"..","logs");Directory.CreateDirectory(folder);File.AppendAllText(Path.Combine(folder,"sender.log"),DateTime.Now.ToString("o")+" pid="+System.Diagnostics.Process.GetCurrentProcess().Id+" "+stage+Environment.NewLine);}catch(IOException){}catch(UnauthorizedAccessException){}}
         void ShowWindow(){if(scroller.Armed)SetScrollStatus("\u63a7\u5236\u7a97\u53e3\u5df2\u6253\u5f00\uff0c\u7ffb\u9875\u505c\u6b62\uff1b\u70b9\u7ee7\u7eed\u91cd\u65b0\u9009\u5b9a\u3002");StopScrolling();Show();WindowState=FormWindowState.Normal;UpdatePreview();Activate();}
         void RestoreTray(){if(closing)return;tray.Visible=false;tray.Icon=trayIcon;tray.Visible=true;}
-        internal void RecoverWindow(){if(closing)return;RestoreTray();ShowWindow();if(!SystemInformation.VirtualScreen.IntersectsWith(Bounds)){Location=Screen.PrimaryScreen.WorkingArea.Location;}BringToFront();}
+        internal bool RecoverWindow(){if(closing)return false;RestoreTray();ShowWindow();if(!SystemInformation.VirtualScreen.IntersectsWith(Bounds)){Location=Screen.PrimaryScreen.WorkingArea.Location;}BringToFront();return Visible&&WindowState==FormWindowState.Normal;}
         void UpdatePreview(){if(previewBytes==null)return;using(var stream=new MemoryStream(previewBytes))using(var image=Image.FromStream(stream)){var old=preview.Image;preview.Image=new Bitmap(image);if(old!=null)old.Dispose();}previewBytes=null;}
         int SelectedIntervalMs {get{return (int)(double.Parse((string)interval.SelectedItem,System.Globalization.CultureInfo.InvariantCulture)*1000);}}
         void SaveSettings(){if(!ready)return;try{new ImageSettings {Direction=direction.SelectedIndex,Enhancement=enhancement.SelectedIndex,Grayscale=gray.Checked,Contrast=contrast.SelectedIndex,ShowCursor=showCursor.Checked,IntervalSeconds=SelectedIntervalMs/1000.0,FullScreen=fullScreen,RegionX=region.X,RegionY=region.Y,RegionWidth=region.Width,RegionHeight=region.Height,AutoScroll=autoScroll.Checked,ScrollSeconds=(double)scrollSeconds.Value,ScrollLines=(int)scrollLines.Value,ScrollMode=scrollMode.SelectedIndex,FullRefreshEvery=(int)fullRefreshEvery.Value}.Save(settingsPath);}catch(Exception e){SetStatus("\u8bbe\u7f6e\u4fdd\u5b58\u5931\u8d25: "+e.Message);}}
@@ -183,7 +224,7 @@ namespace BooxImages {
             catch(Exception e){SetStatus(e.Message);}finally{syncingRefresh=false;}
         }
         async Task ManualRefresh(){
-            if(controlling||closing)return;if(session.Length==0){SetStatus("\u8bf7\u5148\u53d1\u9001\u4e00\u5f20\u56fe\u7247\uff0c\u518d\u5168\u5c40\u5237\u65b0\u3002");return;}
+            if(controlling||closing||pairPending)return;if(session.Length==0){SetStatus("\u8bf7\u5148\u53d1\u9001\u4e00\u5f20\u56fe\u7247\uff0c\u518d\u5168\u5c40\u5237\u65b0\u3002");return;}
             controlling=true;StopScrolling();try{var reply=await Control("refresh");SetStatus(reply.ContainsKey("fullRefreshSupported")&&!Convert.ToBoolean(reply["fullRefreshSupported"])?"BOOX \u5f53\u524d\u4e0d\u652f\u6301\u5168\u5c40\u5237\u65b0":"\u5df2\u8bf7\u6c42 BOOX \u5168\u5c40\u5237\u65b0\u3002");}catch(Exception e){SetStatus(e.Message);}finally{controlling=false;}
         }
         ImageOptions SnapshotOptions(){return new ImageOptions {Landscape=direction.SelectedIndex==1,Grayscale=gray.Checked,Enhancement=enhancement.SelectedIndex,Contrast=float.Parse((string)contrast.SelectedItem,System.Globalization.CultureInfo.InvariantCulture),ShowCursor=showCursor.Checked};}
@@ -196,7 +237,7 @@ namespace BooxImages {
         async void HandleHotkey(int id){if(id==1)await Begin(false,false);else if(id==2){if(automatic)await Pause(true);else await Resume();}else if(id==3)await ReadHere();}
         void StopReadingOnly(){StopScrolling();SetScrollStatus("\u5df2\u6682\u505c\u7ffb\u9875\uff0c\u56fe\u7247\u7ee7\u7eed\u53d1\u9001\uff1bCtrl+Alt+R \u6062\u590d\u7ffb\u9875\u3002");}
         async Task ReadHere(){
-            if(controlling||closing)return;
+            if(controlling||closing||pairPending)return;
             if(automatic&&scroller.TargetIsForeground){StopReadingOnly();return;}
             IntPtr expected=AutoScroller.CurrentWindow;string reason;
             if(!scroller.Arm(expected,out reason)){SetScrollStatus(reason);tray.ShowBalloonTip(3000,"BOOX",reason,ToolTipIcon.Warning);return;}
@@ -221,13 +262,13 @@ namespace BooxImages {
         }
         void UpdateRegionLabel(){regionLabel.Text=String.Format("\u6846\u9009\u533a\u57df: {0} \u00d7 {1}  ({2}, {3})",region.Width,region.Height,region.X,region.Y);}
         async Task ChangeDisplaySettings(){
-            if(controlling||closing)return;controlling=true;bool restart=automatic;captureTimer.Stop();pending=null;generation++;ackHash="";
+            if(controlling||closing||pairPending)return;controlling=true;bool restart=automatic;captureTimer.Stop();pending=null;generation++;ackHash="";
             try {if(restart){Hide();await Task.Delay(200);await captureTask;await CaptureTick();}else SetStatus("\u663e\u793a\u8bbe\u7f6e\u5df2\u4fdd\u5b58\uff0c\u4e0b\u6b21\u53d1\u9001\u65f6\u751f\u6548\u3002");}
             finally{controlling=false;if(restart)captureTimer.Start();}
         }
         Task<Dictionary<string,object>> Control(string action){var request=new Dictionary<string,object>{{"action",action},{"session",action=="home"&&session.Length==0?Guid.NewGuid().ToString("N"):session},{"fullRefreshEvery",(int)fullRefreshEvery.Value}};if(action=="start"||action=="resume"||action=="orientation")request["orientation"]=Orientation;return Request("/control",new StringContent(json.Serialize(request),System.Text.Encoding.UTF8,"application/json"));}
         async Task ReturnHome(){
-            if(controlling||closing)return;controlling=true;
+            if(controlling||closing||pairPending)return;controlling=true;
             wasAutomatic=automatic||wasAutomatic;automatic=false;captureTimer.Stop();StopScrolling();pending=null;generation++;
             SetScrollStatus("\u5df2\u505c\u6b62\u7ffb\u9875\u548c\u56fe\u7247\u53d1\u9001\u3002");
             try{await captureTask;await sendingTask;pending=null;generation++;await Control("home");SetStatus("BOOX \u5df2\u8bf7\u6c42\u8fd4\u56de\u684c\u9762\uff1b\u70b9\u7ee7\u7eed\u53ef\u6062\u590d\u56fe\u7247\u3002");}
@@ -235,20 +276,20 @@ namespace BooxImages {
             finally{controlling=false;}
         }
         async Task ChangeOrientation(){
-            if(controlling||closing)return;ackHash="";pending=null;generation++;if(session.Length==0)return;
+            if(controlling||closing||pairPending)return;ackHash="";pending=null;generation++;if(session.Length==0)return;
             bool restart=automatic;controlling=true;captureTimer.Stop();
             try {await Control("orientation");SetStatus(direction.Text+"\uff1a\u5df2\u540c\u6b65\u5230 BOOX");if(restart){Hide();await Task.Delay(200);await captureTask;await CaptureTick();}}
             catch(Exception e){SetStatus(e.Message);}finally{controlling=false;if(restart)captureTimer.Start();}
         }
         async Task SelectRegion(){
-            if(controlling||closing)return;
+            if(controlling||closing||pairPending)return;
             await Pause();Hide();await Task.Delay(200);
             using(var picker=new RegionPicker()){if(picker.ShowDialog()==DialogResult.OK){region=picker.Selection;hasRegion=true;fullScreen=false;UpdateRegionLabel();SaveSettings();}}
             ShowWindow();
         }
         Task Begin(bool auto,bool resume){return BeginCore(auto,resume,IntPtr.Zero);}
         async Task BeginCore(bool auto,bool resume,IntPtr expected){
-            if(controlling||closing)return;if(fullScreen||!hasRegion)UseFullScreen();
+            if(controlling||closing||pairPending)return;if(fullScreen||!hasRegion)UseFullScreen();
             controlling=true;automatic=false;captureTimer.Stop();StopScrolling();pending=null;generation++;
             try {
                 bool newSession=!resume||session.Length==0;
@@ -260,7 +301,7 @@ namespace BooxImages {
             }catch(Exception e){SetStatus(e.Message);ShowWindow();}finally{controlling=false;}
         }
         async Task SendFile(){
-            if(controlling||closing)return;using(var dialog=new OpenFileDialog {Filter="Images|*.png;*.jpg;*.jpeg;*.bmp",Title="\u9009\u62e9\u8981\u53d1\u9001\u7684\u56fe\u7247"}){
+            if(controlling||closing||pairPending)return;using(var dialog=new OpenFileDialog {Filter="Images|*.png;*.jpg;*.jpeg;*.bmp",Title="\u9009\u62e9\u8981\u53d1\u9001\u7684\u56fe\u7247"}){
                 if(dialog.ShowDialog()!=DialogResult.OK)return;controlling=true;automatic=false;wasAutomatic=false;captureTimer.Stop();StopScrolling();pending=null;generation++;
                 try {string fileName=dialog.FileName;var options=SnapshotOptions();byte[] bytes=await Task.Run(delegate{using(var source=Image.FromFile(fileName)){if((long)source.Width*source.Height>100000000)throw new Exception("Image too large");Orient(source);return ImagePipeline.Encode(source,true,options);}});if(closing)return;lastWasCapture=false;
                     session=Guid.NewGuid().ToString("N");sequence=0;await Control("start");ackHash="";Queue(bytes);
@@ -305,7 +346,7 @@ namespace BooxImages {
             }finally{busy=false;}
         }
         async Task Pause(bool cleanFinalFrame=false){
-            if(controlling||closing)return;controlling=true;
+            if(controlling||closing||pairPending)return;controlling=true;
             bool captureFinal=cleanFinalFrame&&lastWasCapture&&session.Length>0;
             wasAutomatic=automatic||wasAutomatic;automatic=false;captureTimer.Stop();StopScrolling();pending=null;generation++;
             if(autoScroll.Checked)SetScrollStatus("\u5df2\u6682\u505c\u7ffb\u9875\uff1b\u5728\u9605\u8bfb\u6b63\u6587\u6309 Ctrl+Alt+R \u6062\u590d\u3002");
@@ -317,12 +358,12 @@ namespace BooxImages {
             }catch(Exception e){SetStatus(e.Message);}finally{controlling=false;}
         }
         async Task Resume(){
-            if(controlling||closing)return;if(wasAutomatic||last==null){await Begin(true,true);return;}
+            if(controlling||closing||pairPending)return;if(wasAutomatic||last==null){await Begin(true,true);return;}
             controlling=true;generation++;pending=null;
             try {await Control("resume");ackHash="";retryAfter=DateTime.MinValue;Queue(last.Bytes);}catch(Exception e){SetStatus(e.Message);}finally{controlling=false;}
         }
         async Task Poll(){
-            if(polling||controlling||closing)return;polling=true;int observedGeneration=generation;
+            if(polling||controlling||closing||pairPending)return;polling=true;int observedGeneration=generation;
             try {
                 var remote=await Request("/state");if(observedGeneration!=generation||controlling||closing)return;string remoteSession=Convert.ToString(remote["session"]);
                 // Reconcile a receipt lost after BOOX accepted a frame.
@@ -335,10 +376,20 @@ namespace BooxImages {
             }catch(Exception e){if(session.Length==0||automatic)SetStatus("BOOX Wi-Fi: "+e.Message);}finally{polling=false;}
         }
         protected override async void OnFormClosing(FormClosingEventArgs e){
-            if(closing){base.OnFormClosing(e);return;}
-            e.Cancel=true;SaveSettings();closing=true;captureTimer.Stop();pollTimer.Stop();StopScrolling();pending=null;generation++;UnregisterHotKey(Handle,1);UnregisterHotKey(Handle,2);UnregisterHotKey(Handle,3);tray.Visible=false;tray.Dispose();
+            if(closeReady){base.OnFormClosing(e);return;}
+            e.Cancel=true;if(closing)return;
+            LogLifecycle("exit requested; session="+(session.Length>0));
+            SaveSettings();closing=true;captureTimer.Stop();pollTimer.Stop();StopScrolling();pending=null;generation++;UnregisterHotKey(Handle,1);UnregisterHotKey(Handle,2);UnregisterHotKey(Handle,3);tray.Visible=false;tray.Dispose();
+            // Even with no session, leave the first FormClosing callback before closing again.
+            // Do not rely on nested WM_CLOSE handling; explicitly end the main message loop below.
+            await Task.Yield();
             if(session.Length>0){try{var pauseRequest=Control("pause");await Task.WhenAny(pauseRequest,Task.Delay(2000));if(pauseRequest.IsFaulted){var ignored=pauseRequest.Exception;}}catch{}}
-            Close();
+            LogLifecycle("exit network wait finished");http.CancelPendingRequests();closeReady=true;Close();Application.ExitThread();
+        }
+        protected override void OnFormClosed(FormClosedEventArgs e){
+            LogLifecycle("form closed");
+            captureTimer.Dispose();pollTimer.Dispose();scrollTimer.Dispose();scroller.Dispose();http.Dispose();
+            base.OnFormClosed(e);
         }
     }
     sealed class RegionPicker:Form {

@@ -37,6 +37,14 @@ public class PrintReceiverService extends Service {
             return (ip&255)+"."+((ip>>8)&255)+"."+((ip>>16)&255)+"."+((ip>>24)&255);
         }catch(Exception e){return "\u672a\u8fde\u63a5";}
     }
+    public static String wifiName(Context context){
+        try{
+            String name=((WifiManager)context.getApplicationContext().getSystemService(WIFI_SERVICE)).getConnectionInfo().getSSID();
+            if(name==null||"<unknown ssid>".equalsIgnoreCase(name))return "";
+            if(name.length()>1&&name.startsWith("\"" )&&name.endsWith("\""))name=name.substring(1,name.length()-1);
+            return name;
+        }catch(Exception e){return "";}
+    }
     @Override public IBinder onBind(Intent intent){return null;}
     @Override public void onCreate(){
         super.onCreate(); main=new Handler(Looper.getMainLooper());
@@ -104,7 +112,7 @@ public class PrintReceiverService extends Service {
                 String challenge=request[1].substring("/health?challenge=".length());
                 if(!challenge.matches("[0-9a-f]{32}"))throw new IOException("Bad challenge");
                 Mac mac=Mac.getInstance("HmacSHA256");mac.init(new SecretKeySpec(token.getBytes("UTF-8"),"HmacSHA256"));
-                respond(out,200,new JSONObject().put("deviceId",deviceId).put("proof",hex(mac.doFinal((deviceId+":"+challenge).getBytes("UTF-8")))).put("ready",Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState())).put("images",true).put("version","0.5.5"));return;
+                respond(out,200,new JSONObject().put("deviceId",deviceId).put("proof",hex(mac.doFinal((deviceId+":"+challenge).getBytes("UTF-8")))).put("ready",Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState())).put("images",true).put("version","0.5.6"));return;
             }
             String authorization=headers.get("authorization");
             if(authorization==null||!MessageDigest.isEqual(authorization.getBytes("UTF-8"),("Bearer "+token).getBytes("UTF-8"))){respond(out,401,new JSONObject().put("error","Pairing required"));return;}
@@ -187,7 +195,7 @@ public class PrintReceiverService extends Service {
     }
     private void handleImage(String[] request,Map<String,String> headers,InputStream in,OutputStream out)throws Exception {
         if("GET".equals(request[0]) && "/images/state".equals(request[1])) {
-            respond(out,200,onMain(new Callable<JSONObject>(){public JSONObject call()throws Exception{return ImageSession.state().put("deviceId",deviceId);}}));return;
+            respond(out,200,onMain(new Callable<JSONObject>(){public JSONObject call()throws Exception{return ImageSession.state().put("deviceId",deviceId).put("wifiSsid",wifiName(PrintReceiverService.this));}}));return;
         }
         if(!"POST".equals(request[0])){respond(out,404,new JSONObject().put("error","Unknown image endpoint"));return;}
         if("/images/control".equals(request[1])) {

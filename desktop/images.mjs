@@ -43,6 +43,8 @@ export class ImageClient {
     const result=await response.json();
     if(!response.ok){const error=new Error(result.error??`Receiver error ${response.status}`);error.status=response.status;throw error;}
     if(result.deviceId!==config.deviceId)throw new Error('Image receiver identity mismatch');
+    // An authenticated live response is stronger evidence than a periodic health probe.
+    this.checked=Date.now();
     return result;
   }
   state(){return this.request('state');}

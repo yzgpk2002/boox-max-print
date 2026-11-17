@@ -61,6 +61,7 @@ class RecoveryHomeTests {
     Check(tray.Visible&&!form.Visible,"Taskbar restart restores icon without opening window");
    }
    Check(transport.frames==1,"Recovery never restarts capture");
+   Set(form,"closing",true);Check(!form.RecoverWindow(),"Closing instance must not acknowledge successful activation");
    Console.WriteLine("PASS: home drains in-flight frame, drops queued frame, stops timers and works without session; named activation restores hidden window/tray; TaskbarCreated restores only tray");
   }catch(Exception e){failure=e;}finally{if(form!=null){Set(form,"closing",true);((System.Windows.Forms.Timer)Get(form,"captureTimer")).Stop();((System.Windows.Forms.Timer)Get(form,"scrollTimer")).Stop();((NotifyIcon)Get(form,"tray")).Dispose();form.Close();form.Dispose();}context.ExitThread();}};
   timer.Start();Application.Run(context);timer.Dispose();if(failure!=null){Console.Error.WriteLine("FAIL: "+failure);Environment.ExitCode=1;}

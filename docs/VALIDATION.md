@@ -111,6 +111,14 @@
 - 证据：`build/image-performance.txt`、`build/baseline-frames/transfer.json`、`build/optimized-frames/transfer.json`、`build/sender-lifecycle/cursor.png`。物理屏幕的连续跟手体验、最终新界面的按钮布局及实际截图光标位置仍需用户实测确认。
 - 最终已替换 `dist/BooxImages.exe`，部署文件 SHA-256 与构建文件一致，文件版本 0.4.2.0；新版进程启动并响应。仅重启图片桥接，健康接口默认间隔确认为 0.5；项目中创建 `BOOX Images.lnk` 使用新图标。BOOX 保留已暂停的字体对照页，未开启自动截图。
 
+## 退出、首次连接和 Wi-Fi 显示（0.5.6，2026-11-17）
+
+- 原始“托盘退出但进程残留”没有稳定复现，旧版独立退出测试也可通过，因此未认定嵌套 Close 为已证实根因。新版补强完整清理和退出/重开交接，并新增阶段日志。生产托盘菜单在独立进程中被调用，未发送/已发送/无应答/再次启动全部通过；从点击退出计算约 48/44/2048/31ms，互斥锁均释放。初次测试误把窗口初始化时间计入退出预算，修正计时起点后重测通过。
+- 连接现场三次全新客户端只读请求耗时 3708/118/79ms，均最终成功；说明首次短探测存在误判风险，不能据此断言所有离线提示根因相同。新增已知地址二次认证重试，活跃连接使用正常响应续期。Node 16 项通过，包括失败重试、SSID 解析与指定设备重新配对。
+- `tools/test-connection-ui.ps1` 调用生产“重新配对”按钮并模拟传输，验证只发一次请求、停发、清理旧会话、成功后恢复按钮及底部两行标签；生成布局图检查未裁切。独立翻页暂停及托盘/回桌面回归也通过。
+- 真实本机 `/network` 返回电脑和 BOOX 的当前 SSID，二者一致且 online=true。可访问性树读取到两行名称与“已连接”；桌面输入工具报 coordinate input geometry is unavailable / failed to activate captured window，截图报 FrameArrived timed out，未把真实鼠标点击和托盘操作计为通过。
+- 真实 `/pair` 返回 202，后台 USB 配对完成并通过 Wi-Fi 认证；保持原身份与密钥，无网络配置/ADB 映射变更。Windows 0.5.6.0 和 Android 0.5.6/versionCode 7 已部署。见 [0.5.6 日志](logs/acceptance-0.5.6-2026-11-17.json)。
+
 ## 首帧后停止更新修复（0.5.5，2026-11-17）
 
 - 用户报告 BOOX 画面卡住且重新开始无效；现场 state 响应约 31–132ms，paused=true/reason=left/viewerVisible=true。旧版启动日志有重复 ImageActivity START；小图突发测试可复现接受 2 帧后第 3 帧被暂停拒收。
