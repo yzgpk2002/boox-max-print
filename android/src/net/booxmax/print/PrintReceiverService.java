@@ -104,7 +104,7 @@ public class PrintReceiverService extends Service {
                 String challenge=request[1].substring("/health?challenge=".length());
                 if(!challenge.matches("[0-9a-f]{32}"))throw new IOException("Bad challenge");
                 Mac mac=Mac.getInstance("HmacSHA256");mac.init(new SecretKeySpec(token.getBytes("UTF-8"),"HmacSHA256"));
-                respond(out,200,new JSONObject().put("deviceId",deviceId).put("proof",hex(mac.doFinal((deviceId+":"+challenge).getBytes("UTF-8")))).put("ready",Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState())).put("images",true).put("version","0.5.0"));return;
+                respond(out,200,new JSONObject().put("deviceId",deviceId).put("proof",hex(mac.doFinal((deviceId+":"+challenge).getBytes("UTF-8")))).put("ready",Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState())).put("images",true).put("version","0.5.4"));return;
             }
             String authorization=headers.get("authorization");
             if(authorization==null||!MessageDigest.isEqual(authorization.getBytes("UTF-8"),("Bearer "+token).getBytes("UTF-8"))){respond(out,401,new JSONObject().put("error","Pairing required"));return;}
@@ -192,7 +192,13 @@ public class PrintReceiverService extends Service {
         if(!"POST".equals(request[0])){respond(out,404,new JSONObject().put("error","Unknown image endpoint"));return;}
         if("/images/control".equals(request[1])) {
             final JSONObject body=new JSONObject(new String(imageBody(headers,in,4096),"UTF-8"));
-            try {respond(out,200,onMain(new Callable<JSONObject>(){public JSONObject call()throws Exception{ImageSession.control(body.getString("action"),body.getString("session"),body.optString("orientation",""),body.optInt("fullRefreshEvery",-1));return ImageSession.state().put("deviceId",deviceId);}}));}
+            try {respond(out,200,onMain(new Callable<JSONObject>(){public JSONObject call()throws Exception{
+                if("home".equals(body.getString("action"))){
+                    if(!body.getString("session").matches("[0-9a-f]{32}"))throw new Exception("Invalid image session");
+                    ImageSession.goHome(PrintReceiverService.this);
+                }else ImageSession.control(body.getString("action"),body.getString("session"),body.optString("orientation",""),body.optInt("fullRefreshEvery",-1));
+                return ImageSession.state().put("deviceId",deviceId);
+            }}));}
             catch(Exception e){respond(out,409,new JSONObject().put("error",e.getMessage()));}return;
         }
         if(!"/images/frame".equals(request[1])){respond(out,404,new JSONObject().put("error","Unknown image endpoint"));return;}

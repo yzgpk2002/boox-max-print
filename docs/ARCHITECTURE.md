@@ -1,6 +1,6 @@
 # 技术架构与协议
 
-对应公开基线 0.5.3：Windows 图片发送器 0.5.3.0 / Android 接收器 0.5.0。目标设备是实测 Android 4.4.4、1200×1600 的 BOOX Max，不代表所有 BOOX 固件均兼容。
+对应公开基线 0.5.4：Windows 图片发送器 0.5.4.0 / Android 接收器 0.5.4。目标设备是实测 Android 4.4.4、1200×1600 的 BOOX Max，不代表所有 BOOX 固件均兼容。
 
 ## 1. 两条独立数据通道
 
@@ -69,7 +69,11 @@ Windows IPP HTTP 请求总量限制为 64MiB（含 IPP 属性）；设备 PDF �
 
 本机 `/control`、`/frame`、`/state` 经桥接转到设备 `/images/control`、`/images/frame`、`/images/state`。本机 `/health` 不要求 token。
 
-控制 JSON 字段：`action`、`session`、可选 `orientation`、`fullRefreshEvery`。action 允许 start/pause/resume/stop/orientation/settings/refresh；session 为 32 位小写十六进制；orientation 为 portrait/landscape。orientation/settings/refresh 保留暂停状态；stop 与 pause 当前都保留最后画面，不销毁图片。fullRefreshEvery 为 0–1000 整数，省略保留现有值，0 关闭定期全刷。
+控制 JSON 字段：`action`、`session`、可选 `orientation`、`fullRefreshEvery`。action 允许 start/pause/resume/stop/orientation/settings/refresh/home；session 为 32 位小写十六进制；orientation 为 portrait/landscape。orientation/settings/refresh 保留暂停状态；stop 与 pause 当前都保留最后画面，不销毁图片。fullRefreshEvery 为 0–1000 整数，省略保留现有值，0 关闭定期全刷。
+
+`home` 是经过同样 token 认证的设备级操作，不要求请求 session 等于当前图片会话，因而刚打开电脑端或阅读 PDF 时也可使用。接收器先暂停图片，再用 ACTION_MAIN + CATEGORY_HOME + NEW_TASK 打开系统桌面；不清除配对、不关闭接收服务。电脑端先停止两个定时器、清空等待帧、递增代数使处理中帧失效，等待在途上传结束后发送 home。返回后旧帧因 paused 被拒收，只有显式 start/resume 后才会重新显示。
+
+Windows 单实例仍由 Local 命名 Mutex 保护。新增命名请求事件和 UI 回执事件：重复启动通过原进程 UI 线程恢复窗口与 NotifyIcon，4 秒未获 UI 回执则报告未响应。窗口隐藏时仍可收到请求；后台等待不阻塞 UI。原进程监听 TaskbarCreated 重建图标，不显示控制窗、不重启发送。测试使用唯一事件名，不干扰正常发送器；对真实 UI 线程死锁不自动强杀。
 
 图片上传接受 PNG/JPEG，1 张最多 8MiB。头包括 `X-Image-Session`、`X-Image-Sequence`（正整数）及远端 `X-Content-Sha256`。桥接为远端请求添加 SHA-256。状态/回执字段含 session、sequence、sha256、paused、reason、orientation、viewerVisible；成功上传另含 accepted、bytes、duplicate、deviceId。
 

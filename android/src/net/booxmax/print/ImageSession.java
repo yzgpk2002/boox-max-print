@@ -26,6 +26,14 @@ final class ImageSession {
         paused=true; reason=why;
         if(viewer!=null)viewer.updateControls();
     }
+    static void goHome(Context context) throws Exception {
+        Intent home=new Intent(Intent.ACTION_MAIN);
+        home.addCategory(Intent.CATEGORY_HOME);
+        home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        if(home.resolveActivity(context.getPackageManager())==null)throw new Exception("No launcher available");
+        pause("home");
+        context.startActivity(home);
+    }
     static void control(String action,String session,String direction) throws Exception {
         control(action,session,direction,-1);
     }

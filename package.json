@@ -1,6 +1,6 @@
 {
   "name": "boox-max-print",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "private": true,
   "description": "Windows IPP virtual printer delivering PDFs to an Android 4.4 BOOX Max",
   "type": "module",

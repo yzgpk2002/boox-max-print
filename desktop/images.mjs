@@ -41,7 +41,7 @@ export class ImageClient {
   }
   state(){return this.request('state');}
   control(action,session,orientation,fullRefreshEvery){
-    if(!['start','pause','resume','stop','orientation','settings','refresh'].includes(action)||!/^[0-9a-f]{32}$/.test(session))throw new Error('Invalid image control');
+    if(!['start','pause','resume','stop','orientation','settings','refresh','home'].includes(action)||!/^[0-9a-f]{32}$/.test(session))throw new Error('Invalid image control');
     if(orientation!==undefined&&!['portrait','landscape'].includes(orientation))throw new Error('Invalid image orientation');
     if(fullRefreshEvery!==undefined&&(!Number.isInteger(fullRefreshEvery)||fullRefreshEvery<0||fullRefreshEvery>1000))throw new Error('Invalid full refresh interval');
     return this.request('control','POST',JSON.stringify({action,session,orientation,fullRefreshEvery}),{'Content-Type':'application/json'});

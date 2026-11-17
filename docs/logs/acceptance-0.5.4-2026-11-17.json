@@ -1,0 +1,41 @@
+{
+  "version": "0.5.4",
+  "date": "2026-11-17",
+  "timezone": "Asia/Shanghai",
+  "windowsVersion": "0.5.4.0",
+  "androidVersion": "0.5.4",
+  "androidVersionCode": 5,
+  "automated": {
+    "nodeTestsPassed": 12,
+    "readingToggleRegression": "passed",
+    "recoveryHomeRegression": "passed",
+    "homeWaitsForInFlightAndDropsPending": true,
+    "homeStopsCaptureAndScrollTimers": true,
+    "homeWithoutLocalSession": true,
+    "namedEventActivationRestoresHiddenWindowAndTray": true,
+    "taskbarCreatedRestoresTrayWithoutShowingWindow": true
+  },
+  "realDevice": {
+    "transport": "Wi-Fi HTTP",
+    "fixture": "generated PNG",
+    "homeWithoutMatchingSession": true,
+    "imageVisibleBeforeHome": true,
+    "pausedAndViewerHiddenAfterHome": true,
+    "frameAfterHomeStatus": 409,
+    "explicitResumeShowsImageAgain": true,
+    "finalForegroundActivity": "com.onyx/.content.browser.activity.HomeActivity",
+    "newAdbPortMappings": false
+  },
+  "deployment": {
+    "windowsSha256": "770C3842702A50A90AC13D77A775A480A7BC3DA5A07BFFEA5FFA147FDAA5133F",
+    "apkSha256": "F6FBBC5BF4441594D3DAFCFB6FC05ADD65771BC045EA27D56E6AA9D69F5A1DC6",
+    "windowsBuildMatchesInstalled": true,
+    "twoLaunchesLeaveOneResponsiveWindow": true,
+    "settingsAndPairingPreserved": true
+  },
+  "limits": [
+    "Original tray disappearance trigger not reproduced; simulated missing icon and TaskbarCreated tested",
+    "UI-thread deadlock is reported, not force-killed automatically",
+    "Router-wide signal quality, prolonged sleep and Samsung compatibility not newly validated"
+  ]
+}

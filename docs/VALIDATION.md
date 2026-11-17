@@ -111,6 +111,14 @@
 - 证据：`build/image-performance.txt`、`build/baseline-frames/transfer.json`、`build/optimized-frames/transfer.json`、`build/sender-lifecycle/cursor.png`。物理屏幕的连续跟手体验、最终新界面的按钮布局及实际截图光标位置仍需用户实测确认。
 - 最终已替换 `dist/BooxImages.exe`，部署文件 SHA-256 与构建文件一致，文件版本 0.4.2.0；新版进程启动并响应。仅重启图片桥接，健康接口默认间隔确认为 0.5；项目中创建 `BOOX Images.lnk` 使用新图标。BOOX 保留已暂停的字体对照页，未开启自动截图。
 
+## 返回桌面及托盘恢复（0.5.4，2026-11-17）
+
+- `tools/test-recovery-home.ps1` 通过：有在途/等待帧时返回桌面，等待前者完成并丢弃后者；截图与翻页定时器停止；没有本地会话时也发送有效 home 请求。模拟传输不作为真机证据。
+- 同一回归以唯一命名事件唤回隐藏测试窗口及关闭的 NotifyIcon，收到 UI 回执；向测试自身窗口投递 TaskbarCreated 后恢复图标且保持窗口隐藏。未重启 Windows Explorer，也未复现用户图标消失的最初触发条件。
+- `tools/verify-home.mjs` 真实 Wi-Fi 通过：无匹配会话时返回桌面、生成 PNG 显示、返回桌面后 paused=true/viewerVisible=false、新帧返回 409、主动 resume 后恢复显示。测试结束再次返回桌面；ADB 只读确认前台为 `com.onyx/.content.browser.activity.HomeActivity`。USB 仅用于安装和读取状态，图片及 home 指令走原 Wi-Fi 桥接，没有新增端口映射。
+- Windows/Android 均更新至 0.5.4，保留用户设置和配对。电脑启动脚本连续运行两次，最终只有一个 BooxImages 进程、控制窗口句柄非零且响应正常。没有自动开始截图。Node 12 项、原独立翻页暂停回归通过。
+- 新增功能不代表所有路由器位置、长期休眠或三星 Android 16 均已验收；本轮更新目标仅为 BOOX。结构化证据见 [0.5.4 日志](logs/acceptance-0.5.4-2026-11-17.json)。
+
 ## 普通 Chrome 与独立翻页暂停（0.5.2–0.5.3，2026-11-17）
 
 - 0.5.2：用户对常用 Chrome 的“滚动指定行”和“向下翻一页”明确回复“两种都正常”，同时报告 Ctrl+Alt+R 会停止图片发送。这是用户交互验收，不作为自动化测量值。
