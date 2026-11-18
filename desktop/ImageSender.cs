@@ -11,8 +11,8 @@ using System.Collections.Generic;
 using System.Web.Script.Serialization;
 using System.Runtime.InteropServices;
 
-[assembly:System.Reflection.AssemblyVersion("0.5.7.0")]
-[assembly:System.Reflection.AssemblyFileVersion("0.5.7.0")]
+[assembly:System.Reflection.AssemblyVersion("0.5.8.0")]
+[assembly:System.Reflection.AssemblyFileVersion("0.5.8.0")]
 
 namespace BooxImages {
     static class Program {
@@ -65,7 +65,7 @@ namespace BooxImages {
         public void Dispose(){disposed=true;registration.Unregister(null);request.Dispose();ack.Dispose();}
     }
     sealed class Frame {
-        internal byte[] Bytes;internal string Hash,Session;internal long Sequence;internal int Generation;
+        internal byte[] Bytes;internal string Hash,Session;internal long Sequence;internal int Generation,CaptureKind;
     }
     public sealed class SenderForm:Form {
         readonly HttpClient http;
@@ -81,6 +81,7 @@ namespace BooxImages {
         System.Threading.Timer exitDeadline;
         readonly WindowCaptureClient windowCapture=new WindowCaptureClient();
         WindowTarget windowTarget;bool captureWindow;
+        string captureHold="";
         string scrollStatus="",transferStatus="";long scrollSteps;
         readonly string settingsPath;
         readonly Icon appIcon,trayIcon;
@@ -164,7 +165,7 @@ namespace BooxImages {
             Rectangle restoredRegion;if(saved.TryRestoreRegion(SystemInformation.VirtualScreen,out restoredRegion)){region=restoredRegion;hasRegion=true;fullScreen=false;UpdateRegionLabel();}else{fullScreen=true;UseFullScreen();}
             if(saved.CaptureWindow){captureWindow=true;fullScreen=false;windowTarget=new WindowTarget{Handle=saved.WindowHandle,ProcessId=saved.WindowProcess,Started=saved.WindowStarted};regionLabel.Text="指定窗口（已记住）；原窗口关闭后请重新选择，不会自动改为整屏。";}
             preview.Dock=DockStyle.Fill;preview.SizeMode=PictureBoxSizeMode.Zoom;preview.BackColor=Color.FromArgb(240,240,240);layout.Controls.Add(preview);
-            status.Dock=DockStyle.Fill;status.Text="\u5c31\u7eea\u3002\u70b9\u201c\u5f00\u59cb\u81ea\u52a8\u201d\u5373\u53ef\u53d1\u9001\u4e3b\u663e\u793a\u5668\u6574\u5c4f\u3002";layout.Controls.Add(status);
+            status.Dock=DockStyle.Fill;status.Text=captureWindow?"就绪。指定窗口可在普通屏保遮挡时继续同步；请勿最小化目标窗口。":"就绪。整屏/选区遇屏保保留最后画面；屏保期间持续更新请选择窗口。";layout.Controls.Add(status);
             var connection=new Panel{Dock=DockStyle.Fill};networkLabel.Dock=DockStyle.Fill;networkLabel.AutoEllipsis=true;networkLabel.Text="\u6b63\u5728\u68c0\u6d4b\u7535\u8111\u4e0e BOOX \u7684 Wi-Fi...";connection.Controls.Add(networkLabel);
             pairButton.Text="\u91cd\u65b0\u914d\u5bf9 (USB)";pairButton.Dock=DockStyle.Right;pairButton.Width=150;pairButton.Click+=async delegate{await RePair();};connection.Controls.Add(pairButton);layout.Controls.Add(connection);
             tray.Icon=trayIcon;tray.Text="BOOX Max \u56fe\u7247";tray.Visible=true;tray.DoubleClick+=delegate{ShowWindow();};
@@ -268,7 +269,7 @@ namespace BooxImages {
         string Orientation {get{return direction.SelectedIndex==1?"landscape":"portrait";}}
         void UseFullScreen(){
             region=Screen.PrimaryScreen.Bounds;hasRegion=true;
-            regionLabel.Text=String.Format("\u6574\u5c4f\uff08\u4e3b\u663e\u793a\u5668\uff09: {0}\u00d7{1}  |  \u53ef\u76f4\u63a5\u5f00\u59cb\uff0c\u6846\u9009\u4e3a\u53ef\u9009\u529f\u80fd",region.Width,region.Height);
+            regionLabel.Text=String.Format("整屏（主显示器）: {0}×{1}  |  屏保期间保留最后桌面；持续更新请选择窗口",region.Width,region.Height);
         }
         void UpdateRegionLabel(){regionLabel.Text=String.Format("\u6846\u9009\u533a\u57df: {0} \u00d7 {1}  ({2}, {3})",region.Width,region.Height,region.X,region.Y);}
         async Task ChangeDisplaySettings(){
@@ -339,21 +340,25 @@ namespace BooxImages {
             capturing=true;int captureGeneration=generation;string captureSession=session;
             try {
                 bool windowMode=captureWindow;WindowTarget target=windowTarget;
-                if(!DesktopGuard.CanCapture(windowMode)){pending=null;SetStatus(windowMode?"锁屏或桌面不可访问，保留最后画面；解锁后自动恢复。":"屏保或锁屏中，保留最后桌面；持续同步请选择窗口。");return;}
+                string blocked=DesktopGuard.BlockReason(windowMode);if(captureHold!=blocked){captureHold=blocked;LogLifecycle("capture "+(blocked.Length==0?"resumed":"held: "+blocked)+"; source="+(windowMode?"window":"desktop"));}
+                if(blocked.Length>0){pending=null;SetStatus(windowMode?"锁屏或桌面不可访问，保留最后画面；解锁后自动恢复。":"屏保或锁屏中，保留最后桌面；持续同步请选择窗口。");return;}
                 if(!windowMode&&fullScreen)UseFullScreen();Rectangle bounds=region;ImageOptions options=SnapshotOptions();lastWasCapture=true;
                 byte[] bytes;
                 if(windowMode){using(var source=await windowCapture.CaptureAsync(target,options.ShowCursor))bytes=await Task.Run(()=>ImagePipeline.Encode(source,false,options));}
                 else bytes=await Task.Run(delegate {if(!DesktopGuard.CanCapture(false))return null;using(var source=ScreenCapture.Capture(bounds,options.ShowCursor))return ImagePipeline.Encode(source,false,options);});
                 // A pause, new session or setting change invalidates work already in progress.
-                if(bytes!=null&&!closing&&captureGeneration==generation&&captureSession==session&&DesktopGuard.CanCapture(windowMode))Queue(bytes);
+                if(bytes!=null&&!closing&&captureGeneration==generation&&captureSession==session&&DesktopGuard.CanCapture(windowMode))QueueCapture(bytes,windowMode?2:1);
             }catch(Exception e){if(captureGeneration==generation)SetStatus(e.Message);}
             finally{capturing=false;}
         }
         void Queue(byte[] bytes){
+            QueueCapture(bytes,0);
+        }
+        void QueueCapture(byte[] bytes,int captureKind){
             string hash;using(var sha=SHA256.Create())hash=BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-","").ToLowerInvariant();
             if(hash==ackHash&&!busy){pending=null;return;}
             if(pending!=null&&pending.Hash==hash)return;
-            pending=new Frame {Bytes=bytes,Hash=hash,Session=session,Sequence=++sequence,Generation=generation};last=pending;
+            pending=new Frame {Bytes=bytes,Hash=hash,Session=session,Sequence=++sequence,Generation=generation,CaptureKind=captureKind};last=pending;
             StartPump();
         }
         void StartPump(){if(!busy)sendingTask=PumpAsync();}
@@ -362,6 +367,7 @@ namespace BooxImages {
             try {
                 while(pending!=null&&!closing){
                     Frame frame=pending;pending=null;if(frame.Generation!=generation)continue;if(frame.Hash==ackHash)continue;
+                    if(frame.CaptureKind!=0&&!DesktopGuard.CanCapture(frame.CaptureKind==2)){SetStatus("屏保或锁屏中，已拦截待发送截图，保留 BOOX 最后画面。");continue;}
                     try {using(var body=new ByteArrayContent(frame.Bytes)){body.Headers.ContentType=new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");body.Headers.Add("X-Image-Session",frame.Session);body.Headers.Add("X-Image-Sequence",frame.Sequence.ToString());await Request("/frame",body);}
                         if(frame.Generation!=generation)continue;ackHash=frame.Hash;retryAfter=DateTime.MinValue;
                         previewBytes=frame.Bytes;if(Visible&&WindowState!=FormWindowState.Minimized)UpdatePreview();
@@ -385,7 +391,7 @@ namespace BooxImages {
         async Task Resume(){
             if(controlling||closing||pairPending)return;if(wasAutomatic||last==null){await Begin(true,true);return;}
             controlling=true;generation++;pending=null;
-            try {await Control("resume");ackHash="";retryAfter=DateTime.MinValue;Queue(last.Bytes);}catch(Exception e){SetStatus(e.Message);}finally{controlling=false;}
+            try {await Control("resume");ackHash="";retryAfter=DateTime.MinValue;QueueCapture(last.Bytes,last.CaptureKind);}catch(Exception e){SetStatus(e.Message);}finally{controlling=false;}
         }
         async Task Poll(){
             if(polling||controlling||closing||pairPending)return;polling=true;int observedGeneration=generation;

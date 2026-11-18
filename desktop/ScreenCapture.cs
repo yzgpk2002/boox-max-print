@@ -18,16 +18,56 @@ namespace BooxImages {
         [DllImport("user32.dll")] static extern IntPtr GetProcessWindowStation();
         [DllImport("user32.dll")] static extern IntPtr GetThreadDesktop(uint thread);
         [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+        delegate bool EnumWindow(IntPtr window,IntPtr param);
+        [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] struct ProcessEntry {
+            public uint Size,Usage,ProcessId;public UIntPtr Heap;public uint Module,Threads,ParentProcessId;public int Priority;public uint Flags;
+            [MarshalAs(UnmanagedType.ByValTStr,SizeConst=260)] public string FileName;
+        }
+        [DllImport("kernel32.dll")] static extern IntPtr CreateToolhelp32Snapshot(uint flags,uint process);
+        [DllImport("kernel32.dll",CharSet=CharSet.Unicode)] static extern bool Process32First(IntPtr snapshot,ref ProcessEntry entry);
+        [DllImport("kernel32.dll",CharSet=CharSet.Unicode)] static extern bool Process32Next(IntPtr snapshot,ref ProcessEntry entry);
+        [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+        [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindow callback,IntPtr param);
+        [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
+        [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window,out uint process);
+        [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr window,StringBuilder text,int size);
+        [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr window,int attribute,out int value,int size);
+        // .scr launched by preview/shortcut can cover Default without setting SPI_GETSCREENSAVERRUNNING.
+        // Inspect actual visible windows; a dormant LockApp process alone is not a lock signal.
+        static int VisibleProtection(bool includeSaver){
+            var processes=new Dictionary<uint,int>();IntPtr snapshot=CreateToolhelp32Snapshot(2,0);
+            if(snapshot==new IntPtr(-1))return -1;
+            try{var entry=new ProcessEntry{Size=(uint)Marshal.SizeOf(typeof(ProcessEntry))};if(!Process32First(snapshot,ref entry))return -1;
+                do{string file=entry.FileName;if(includeSaver&&file.EndsWith(".scr",StringComparison.OrdinalIgnoreCase))processes[entry.ProcessId]=1;
+                    else if(file.Equals("LockApp.exe",StringComparison.OrdinalIgnoreCase)||file.Equals("LogonUI.exe",StringComparison.OrdinalIgnoreCase))processes[entry.ProcessId]=2;
+                }while(Process32Next(snapshot,ref entry));
+            }finally{CloseHandle(snapshot);}
+            int protection=0;
+            bool enumerated=EnumWindows(delegate(IntPtr window,IntPtr unused){
+                if(!IsWindowVisible(window))return true;
+                uint pid;GetWindowThreadProcessId(window,out pid);int kind;processes.TryGetValue(pid,out kind);
+                if(kind==0&&includeSaver){var name=new StringBuilder(128);GetClassName(window,name,name.Capacity);if(name.ToString().Equals("WindowsScreenSaverClass",StringComparison.OrdinalIgnoreCase))kind=1;}
+                if(kind==0)return true;int cloaked;if(DwmGetWindowAttribute(window,14,out cloaked,4)==0&&cloaked!=0)return true;
+                protection=Math.Max(protection,kind);
+                return true;
+            },IntPtr.Zero);
+            return enumerated?protection:-1;
+        }
         public static string InstanceScope(){
             int needed;var station=new StringBuilder(256);var desktop=new StringBuilder(256);
             if(!GetUserObjectInformation(GetProcessWindowStation(),2,station,512,out needed)||!GetUserObjectInformation(GetThreadDesktop(GetCurrentThreadId()),2,desktop,512,out needed))throw new InvalidOperationException("无法确定当前桌面，未启动发送器。");
             using(var sha=System.Security.Cryptography.SHA256.Create())return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(station+"\\"+desktop))).Replace("-","").Substring(0,24);
         }
         public static bool Allows(bool windowMode,bool readableDefault,bool saverKnown,bool saverRunning){return readableDefault&&(windowMode||(saverKnown&&!saverRunning));}
-        public static bool CanCapture(bool windowMode){
-            IntPtr desktop=OpenInputDesktop(0,false,1);if(desktop==IntPtr.Zero)return false;
+        public static bool CanCapture(bool windowMode){return BlockReason(windowMode).Length==0;}
+        public static string BlockReason(bool windowMode){
+            IntPtr desktop=OpenInputDesktop(0,false,1);if(desktop==IntPtr.Zero)return "input-desktop-unavailable";
             try{int needed;var name=new StringBuilder(256);bool normal=GetUserObjectInformation(desktop,2,name,name.Capacity*2,out needed)&&name.ToString()=="Default";
-                bool saver;bool known=SystemParametersInfo(0x72,0,out saver,0);return Allows(windowMode,normal,known,saver);
+                if(!normal)return "non-default-desktop";
+                int visible=VisibleProtection(!windowMode);if(visible<0)return "window-inspection-unavailable";if(visible==2)return "visible-lock-window";
+                if(windowMode)return "";
+                if(visible==1)return "visible-screensaver-window";
+                bool saver;bool known=SystemParametersInfo(0x72,0,out saver,0);return !known?"screensaver-state-unavailable":saver?"system-screensaver-running":"";
             }finally{CloseDesktop(desktop);}
         }
     }

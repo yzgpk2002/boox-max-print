@@ -1,4 +1,4 @@
-# 指定窗口捕获与退出（0.5.7）
+# 指定窗口捕获与退出（0.5.8）
 
 ## 使用
 
@@ -34,4 +34,10 @@
 
 先构建到 build 目录，再运行 `tools/test-window-capture.ps1`：使用生成的 WinForms 测试窗口，验证遮挡后颜色变化、窗口隐藏/身份拒绝、锁屏/屏保决策、卡住子进程的超时与清理。`tests/ChromeWindowCaptureTests.cs` 只选择标题以 BOOX-CAPTURE-FIXTURE-057 开头的专用动态 Chrome 测试窗口，验证遮挡下的内容变化，输出本地生成 PNG；`tools/verify-window-capture.mjs` 把这两张测试图发送到真实 BOOX 并校验 SHA-256，最后暂停，会改变 BOOX 当前画面。
 
-退出、托盘恢复、独立翻页暂停和连接界面的回归分别见 test-sender-exit、test-recovery-home、test-reading-toggle、test-connection-ui 脚本。现场用户关闭与自动菜单调用分开记录。尚未把真实系统屏保、睡眠唤醒、所有 Chrome 配置或其他应用的后台绘制能力记作验收通过。
+退出、托盘恢复、独立翻页暂停和连接界面的回归分别见 test-sender-exit、test-recovery-home、test-reading-toggle、test-connection-ui 脚本。现场用户关闭与自动菜单调用分开记录。Windows 自带纯黑屏保手动运行已经验证；其他屏保、定时启动、安全锁屏、睡眠唤醒、所有 Chrome 配置与其他应用的后台绘制能力仍需分别实测。
+
+## 0.5.8 屏保检测
+
+在系统屏保标志之外，读取进程快照并检查当前桌面可见窗口。可见 .scr 所属窗口及 WindowsScreenSaverClass 拦住整屏/选区；可见且未被 DWM cloaked 的 LockApp/LogonUI 阻止所有实时捕获，后台休眠的 LockApp 进程不会单独触发保护。不枚举或记录窗口标题。待发送帧带捕获来源标记，网络重试和恢复旧帧仍经过上传前保护。保持/恢复的原因码写入 sender.log。
+
+tools/test-system-screensaver.ps1 在正常交互桌面短暂启动 Windows 自带纯黑屏保 scrnsave.scr /s，检查整屏被阻止，并让生成窗口在真实屏保后由蓝变绿，验证指定窗口继续更新。测试结束清理自己创建的屏保，运行期间不要动鼠标键盘；不修改屏保配置。-Mode guard 只验证整屏拦截。该场景已通过，不等同于全部屏保、定时启动、安全锁屏或睡眠唤醒通过。

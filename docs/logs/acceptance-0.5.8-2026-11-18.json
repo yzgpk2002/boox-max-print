@@ -1,0 +1,35 @@
+{
+  "date": "2026-11-18",
+  "timezone": "Asia/Shanghai",
+  "windowsVersion": "0.5.8.0",
+  "androidVersion": "0.5.6 (unchanged)",
+  "userReport": "Windows screensaver image sent while using full-screen capture",
+  "checks": {
+    "systemScreensaver": "Real Windows scrnsave.scr /s running: desktopAllowed=false; owned window changed blue to green and captured correctly behind saver",
+    "settingsChanged": false,
+    "windowCaptureRegression": "passed",
+    "readingOnlyPause": "passed",
+    "exitMs": {
+      "idle": 184,
+      "active": 227,
+      "offline": 2204,
+      "restart": 306
+    },
+    "node": {
+      "passed": 16,
+      "failed": 0
+    },
+    "guardMeanMs": 25.4,
+    "guardSamples": 30
+  },
+  "unsuccessfulAttempts": [
+    "Initial window baseline capture timed out before real saver verification",
+    "One real saver instance exited before the check; this was rejected instead of counted as a pass"
+  ],
+  "limitations": [
+    "Real-system test covers manually launched Windows black screensaver, not every configured screensaver or idle-triggered secure session transition",
+    "Full-screen mode retains last desktop during screensaver; continuous updates require explicit selected-window capture",
+    "Developer deployment replaces a paused sender process; that replacement is not a graceful-exit test"
+  ],
+  "privacy": "No credentials, SSIDs, IPs, device identifiers, window titles or screen images published"
+}
