@@ -32,7 +32,8 @@ while (Date.now() < deadline) {
   const stamp = [state.session, state.sequence, state.sha256].join('/');
   for (const line of lines) {
     if (!heldAt && / display off\s*$| session locked\s*$|capture held: (system-screensaver-running|visible-screensaver-window); source=desktop/.test(line)) {
-      if (!baseline || Date.now() - stableSince < 5000) throw new Error('No stable pre-event receiver baseline');
+      if (!baseline) throw new Error('No active pre-event receiver baseline');
+      if (Date.now() - stableSince < 5000) console.log('Pre-event page was changing. Comparing the last observed receipt');
       heldAt = Date.now();
       console.log('Windows event observed. Comparing BOOX receipts for 90 seconds');
     }
