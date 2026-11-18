@@ -1,0 +1,35 @@
+{
+  "date": "2026-11-18",
+  "timezone": "Asia/Shanghai",
+  "windowsVersion": "0.5.7.0",
+  "androidVersion": "0.5.6 (unchanged)",
+  "tests": {
+    "node": {"passed": 16, "failed": 0},
+    "trayExitRegressionMs": {"idle": 83, "active": 99, "unresponsiveReceiver": 2102, "restart": 135},
+    "windowCapture": "Passed generated occluded-window updates, hidden/identity rejection, policy checks, bounded stalled-helper termination and normal helper cleanup",
+    "chrome": "Passed two different encoded frames from a generated dynamic Chrome page behind an owned overlay",
+    "realWifi": "Both changed Chrome fixture PNG frames delivered; each receiver SHA-256 matched; test ended paused",
+    "desktopScope": "Read-only hashes differed between development sandbox and normal desktop; no raw desktop identity published",
+    "readingOnlyPause": "passed",
+    "trayRecoveryAndHome": "passed",
+    "connectionUi": "passed",
+    "userExit": {"observedLogSource": "window close", "messageLoopElapsedMs": 210, "senderProcessesAfterExit": 0, "captureHelpersAfterExit": 0},
+    "reopen": "One production sender process; activation returned visible window; authenticated network endpoint online"
+  },
+  "unsuccessfulAttempts": [
+    "Initial Wi-Fi run returned HTTP 429 while a previous upload was active; after pausing the previous session and bounded busy retries, the two-frame verification passed",
+    "Initial stall test did not induce a blocking WM_PRINT on this compositor; replaced with an explicitly stalled fixture helper to verify the timeout and termination path",
+    "Computer Use click reported coordinate input geometry unavailable; no mouse click was claimed successful"
+  ],
+  "binarySha256": {
+    "BooxImages.exe": "BD4875D0AB0455C232969C7542E0CB0D5760BC9F72DCF25E862D74A20E905AAD",
+    "BooxWindowCapture.exe": "0DF652EA6011C3621848FDD1141846DCE4FBF99F9C22F371ECE67AF93ED13AB2"
+  },
+  "limitations": [
+    "Actual Windows system screensaver/secure lock transition is not recorded as a completed hardware acceptance test",
+    "Chrome test is a generated fixture, not a claim covering every site, GPU application or minimized window",
+    "User exit log records window close; automated tray menu invocation is separate evidence",
+    "An invisible development-desktop instance affected early observation; this is not proof of the sole historical residual-process cause"
+  ],
+  "privacy": "No credentials, SSIDs, IP addresses, device identifiers, user window titles or captured images included"
+}

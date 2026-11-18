@@ -7,4 +7,7 @@ $uiRefs=@(('/r:'+(Join-Path (Split-Path $compiler) 'WPF\UIAutomationClient.dll')
 if(!$OutputPath){$OutputPath=Join-Path $projectRoot 'dist\BooxImages.exe'}
 & $compiler @uiRefs /nologo /target:winexe /optimize+ /unsafe+ /platform:anycpu /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Net.Http.dll /r:System.Web.Extensions.dll (('/win32icon:')+(Join-Path $projectRoot 'desktop\assets\boox-images.ico')) (('/resource:')+(Join-Path $projectRoot 'desktop\assets\boox-images.ico')+',BooxImages.AppIcon') (('/resource:')+(Join-Path $projectRoot 'desktop\assets\boox-tray.ico')+',BooxImages.TrayIcon') (('/out:')+$OutputPath) (Join-Path $projectRoot 'desktop\ImageSender.cs') (Join-Path $projectRoot 'desktop\ImageEnhancement.cs') (Join-Path $projectRoot 'desktop\ImagePipeline.cs') (Join-Path $projectRoot 'desktop\ImageSettings.cs') (Join-Path $projectRoot 'desktop\ScreenCapture.cs') (Join-Path $projectRoot 'desktop\AutoScroller.cs')
 if($LASTEXITCODE -ne 0){throw 'Image sender build failed'}
+$capturePath=Join-Path (Split-Path $OutputPath -Parent) 'BooxWindowCapture.exe'
+& $compiler /nologo /target:exe /optimize+ /r:System.Drawing.dll (('/out:')+$capturePath) (Join-Path $projectRoot 'desktop\WindowCaptureHost.cs') (Join-Path $projectRoot 'desktop\ScreenCapture.cs')
+if($LASTEXITCODE -ne 0){throw 'Window capture helper build failed'}
 Get-Item $OutputPath | Select-Object FullName,Length

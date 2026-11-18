@@ -1,0 +1,37 @@
+# 指定窗口捕获与退出（0.5.7）
+
+## 使用
+
+打开目标网页/文档并保持窗口未最小化。在发送器点击“选择窗口”，在列表中选择该窗口，再点击“开始自动”。可以让其他窗口遮住它。源是一个窗口：浏览器切换标签时会同步该窗口当前标签，并不是固定某个网址。
+
+普通屏保仍在可访问 Default 桌面时，直接读取选定窗口的绘制内容，不把屏保图像发送到 BOOX。锁屏或安全屏保切到不可访问桌面时保留最后画面，解锁后自动重试。不会解锁电脑、禁止屏保或更改电源/网络设置。自动翻页在屏保或锁屏时停止，避免向屏保发送输入；窗口图片同步与翻页独立。
+
+关闭、隐藏或最小化目标窗口时保留最后画面。恢复同一窗口后自动重试；窗口已经关闭则重新选择。选择和 PID、进程启动时间、窗口句柄保存在本地配置中，重开时验证身份；失效不会自动回退整屏。窗口标题仅在本地界面显示，不写入公开日志。
+
+## 捕获链路
+
+`SenderForm → WindowCaptureClient → BooxWindowCapture.exe → PrintWindow → PNG → ImagePipeline → 原有认证 Wi-Fi 通道`。
+
+使用 PrintWindow 的完整内容标志读取应用绘制内容。该 API 是同步调用，目标应用可能阻塞，因此它不运行在发送器 UI 线程。参考 [Microsoft PrintWindow](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-printwindow)。辅助进程通过标准输入接收窗口身份，通过标准输出传回有长度的 PNG 或错误；不打开监听端口，不使用屏幕截图作为失败回退。
+
+每次请求最多等待 1.8 秒；超时只结束本实例拥有的辅助进程，3 秒后重试。正常情况下复用同一辅助进程，避免每帧启动进程。父进程关闭时主动结束辅助进程；辅助进程另有 0.5 秒父进程身份检查，处理父进程异常结束。捕获队列仍只有一个在途工作，增强/上传仍复用原有最新帧队列。
+
+桌面模式取图前后检查屏保状态；指定窗口模式取图前后检查输入桌面可访问且名为 Default。调用 [OpenInputDesktop](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-openinputdesktop) 后关闭读取句柄，不调用 SwitchDesktop。检查不能替代操作系统权限，也不是跨安全桌面捕获功能。
+
+显式 API 失败、采样全黑、采样全未绘制背景会拒绝该帧。某些 GPU/视频应用可能返回部分空白或停止后台绘制，不能可靠检测所有情况，也不能强迫网页绕过浏览器后台节流。0.1 秒选项仍是检查频率，实际吞吐取决于窗口绘制、编码、网络和墨水屏。
+
+## 退出与启动
+
+托盘菜单与窗口关闭共用 RequestExit：先设置退出状态并保存选项、停止定时器和输入，再在当前回调返回后清理托盘/辅助进程，最多等待 2 秒暂停回执，取消 HTTP，关闭主窗并结束消息循环。生产版本设置独立 5 秒进程退出兜底，消息循环正常结束后也明确结束运行时，防止库中的残留前台线程维持进程。
+
+单实例互斥锁和激活事件按会话、窗口站、桌面区分。同一交互桌面重复运行唤回原窗；隔离开发桌面不能占用正常桌面的激活通道。安装和交互验收应在用户正常桌面进行。不要用“进程响应正常/有窗口句柄”代替确认窗口可见，也不要把手工强杀算成退出通过。
+
+`logs/sender.log` 记录 starting、exit requested from、exit network wait finished、form closed、message loop ended，不记录配对密钥。看到兜底退出时可能没有完整尾部阶段日志，应继续排查对应阶段。
+
+## 构建与验证
+
+`tools/build-images.ps1` 同时生成 BooxImages.exe 和 BooxWindowCapture.exe，两者须放在同一目录。只升级 Windows；BOOX 0.5.6 接收器可继续使用。
+
+先构建到 build 目录，再运行 `tools/test-window-capture.ps1`：使用生成的 WinForms 测试窗口，验证遮挡后颜色变化、窗口隐藏/身份拒绝、锁屏/屏保决策、卡住子进程的超时与清理。`tests/ChromeWindowCaptureTests.cs` 只选择标题以 BOOX-CAPTURE-FIXTURE-057 开头的专用动态 Chrome 测试窗口，验证遮挡下的内容变化，输出本地生成 PNG；`tools/verify-window-capture.mjs` 把这两张测试图发送到真实 BOOX 并校验 SHA-256，最后暂停，会改变 BOOX 当前画面。
+
+退出、托盘恢复、独立翻页暂停和连接界面的回归分别见 test-sender-exit、test-recovery-home、test-reading-toggle、test-connection-ui 脚本。现场用户关闭与自动菜单调用分开记录。尚未把真实系统屏保、睡眠唤醒、所有 Chrome 配置或其他应用的后台绘制能力记作验收通过。

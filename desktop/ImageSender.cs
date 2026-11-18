@@ -11,14 +11,15 @@ using System.Collections.Generic;
 using System.Web.Script.Serialization;
 using System.Runtime.InteropServices;
 
-[assembly:System.Reflection.AssemblyVersion("0.5.6.0")]
-[assembly:System.Reflection.AssemblyFileVersion("0.5.6.0")]
+[assembly:System.Reflection.AssemblyVersion("0.5.7.0")]
+[assembly:System.Reflection.AssemblyFileVersion("0.5.7.0")]
 
 namespace BooxImages {
     static class Program {
         [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
         [DllImport("user32.dll")] static extern bool AllowSetForegroundWindow(int processId);
-        internal const string ActivationName="Local\\BooxMaxImageSender.Activate";
+        internal static readonly string InstanceName="Local\\BooxMaxImageSender."+DesktopGuard.InstanceScope();
+        internal static readonly string ActivationName=InstanceName+".Activate";
         internal static bool ActivateExisting(string name) {
             for(int attempt=0;attempt<20;attempt++)try {
                 using(var request=System.Threading.EventWaitHandle.OpenExisting(name))
@@ -32,7 +33,7 @@ namespace BooxImages {
         }
         [STAThread] static void Main(string[] args) {
             SetProcessDPIAware();Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
-            bool created;using(var mutex=new System.Threading.Mutex(true,"Local\\BooxMaxImageSender",out created)) {
+            bool created;using(var mutex=new System.Threading.Mutex(true,InstanceName,out created)) {
                 bool owns=created;
                 if(!created){
                     if(ActivateExisting(ActivationName))return;
@@ -40,9 +41,11 @@ namespace BooxImages {
                     try{owns=mutex.WaitOne(500);}catch(System.Threading.AbandonedMutexException){owns=true;}
                     if(!owns){MessageBox.Show("\u539f\u53d1\u9001\u5668\u672a\u54cd\u5e94\u6253\u5f00\u8bf7\u6c42\u3002\u8bf7\u5728\u4efb\u52a1\u7ba1\u7406\u5668\u7ed3\u675f BooxImages \u540e\u91cd\u65b0\u6253\u5f00\u3002","BOOX Max Images");return;}
                 }
-                try {using(var form=new SenderForm())using(var activation=new WindowActivation(form,ActivationName)){Application.Run(form);form.LogLifecycle("message loop ended");}}catch(Exception e){MessageBox.Show(e.Message,"BOOX Max Images");}
+                try {using(var form=new SenderForm())using(var activation=new WindowActivation(form,ActivationName)){form.EnforceProcessExit=true;Application.Run(form);form.LogLifecycle("message loop ended");}}catch(Exception e){MessageBox.Show(e.Message,"BOOX Max Images");}
                 finally{if(owns)mutex.ReleaseMutex();}
             }
+            // Native/COM libraries may retain foreground threads after the WinForms loop ends.
+            Environment.Exit(0);
         }
     }
     // Named events work even when the main window and notification icon are hidden.
@@ -74,6 +77,10 @@ namespace BooxImages {
         readonly AutoScroller scroller=new AutoScroller();
         DateTime nextScroll;
         bool ready,syncingRefresh,scrollBusy,closeReady;
+        internal bool EnforceProcessExit;
+        System.Threading.Timer exitDeadline;
+        readonly WindowCaptureClient windowCapture=new WindowCaptureClient();
+        WindowTarget windowTarget;bool captureWindow;
         string scrollStatus="",transferStatus="";long scrollSteps;
         readonly string settingsPath;
         readonly Icon appIcon,trayIcon;
@@ -111,8 +118,9 @@ namespace BooxImages {
             var heading=new Label {Text="\u628a\u7535\u8111\u753b\u9762\u6216\u56fe\u7247\u53d1\u9001\u5230 BOOX",Dock=DockStyle.Fill,Font=new Font(Font.FontFamily,15,FontStyle.Bold)};layout.Controls.Add(heading);
             var actions=new FlowLayoutPanel {Dock=DockStyle.Fill};layout.Controls.Add(actions);
             Add(actions,"\u9009\u62e9\u56fe\u7247",async delegate {await SendFile();});
-            Add(actions,"\u6574\u5c4f",async delegate {if(controlling||closing||pairPending)return;await Pause();fullScreen=true;UseFullScreen();SaveSettings();});
+            Add(actions,"\u6574\u5c4f",async delegate {if(controlling||closing||pairPending)return;await Pause();captureWindow=false;fullScreen=true;UseFullScreen();SaveSettings();});
             Add(actions,"\u6846\u9009\u533a\u57df",async delegate {await SelectRegion();});
+            Add(actions,"选择窗口",async delegate {await SelectWindow();});
             Add(actions,"\u53d1\u9001\u4e00\u6b21",async delegate {await Begin(false,false);});
             Add(actions,"\u5f00\u59cb\u81ea\u52a8",async delegate {await Begin(true,false);});
             Add(actions,"BOOX \u56de\u684c\u9762",async delegate {await ReturnHome();});
@@ -154,12 +162,13 @@ namespace BooxImages {
             layout.Controls.Add(new Label {Text="Ctrl+Alt+B \u622a\u56fe  |  Ctrl+Alt+P \u6682\u505c/\u7ee7\u7eed  |  Ctrl+Alt+R \u4ece\u5f53\u524d\u7f51\u9875\u5f00\u59cb/\u505c\u6b62\u7ffb\u9875",Dock=DockStyle.Fill,ForeColor=Color.DimGray});
             regionLabel.Dock=DockStyle.Fill;layout.Controls.Add(regionLabel);
             Rectangle restoredRegion;if(saved.TryRestoreRegion(SystemInformation.VirtualScreen,out restoredRegion)){region=restoredRegion;hasRegion=true;fullScreen=false;UpdateRegionLabel();}else{fullScreen=true;UseFullScreen();}
+            if(saved.CaptureWindow){captureWindow=true;fullScreen=false;windowTarget=new WindowTarget{Handle=saved.WindowHandle,ProcessId=saved.WindowProcess,Started=saved.WindowStarted};regionLabel.Text="指定窗口（已记住）；原窗口关闭后请重新选择，不会自动改为整屏。";}
             preview.Dock=DockStyle.Fill;preview.SizeMode=PictureBoxSizeMode.Zoom;preview.BackColor=Color.FromArgb(240,240,240);layout.Controls.Add(preview);
             status.Dock=DockStyle.Fill;status.Text="\u5c31\u7eea\u3002\u70b9\u201c\u5f00\u59cb\u81ea\u52a8\u201d\u5373\u53ef\u53d1\u9001\u4e3b\u663e\u793a\u5668\u6574\u5c4f\u3002";layout.Controls.Add(status);
             var connection=new Panel{Dock=DockStyle.Fill};networkLabel.Dock=DockStyle.Fill;networkLabel.AutoEllipsis=true;networkLabel.Text="\u6b63\u5728\u68c0\u6d4b\u7535\u8111\u4e0e BOOX \u7684 Wi-Fi...";connection.Controls.Add(networkLabel);
             pairButton.Text="\u91cd\u65b0\u914d\u5bf9 (USB)";pairButton.Dock=DockStyle.Right;pairButton.Width=150;pairButton.Click+=async delegate{await RePair();};connection.Controls.Add(pairButton);layout.Controls.Add(connection);
             tray.Icon=trayIcon;tray.Text="BOOX Max \u56fe\u7247";tray.Visible=true;tray.DoubleClick+=delegate{ShowWindow();};
-            var menu=new ContextMenuStrip();menu.Items.Add("\u6253\u5f00\u63a7\u5236\u7a97\u53e3",null,delegate{ShowWindow();});menu.Items.Add("\u53d1\u9001\u622a\u56fe",null,async delegate{await Begin(false,false);});menu.Items.Add("\u6682\u505c",null,async delegate{await Pause(true);});menu.Items.Add("\u7ee7\u7eed",null,async delegate{await Resume();});menu.Items.Add("\u9000\u51fa",null,delegate{Close();});menu.Items.Add(new ToolStripSeparator());menu.Items.Add(new ToolStripMenuItem("Ctrl+Alt+B  \u53d1\u9001\u622a\u56fe"){Enabled=false});menu.Items.Add(new ToolStripMenuItem("Ctrl+Alt+P  \u6682\u505c / \u7ee7\u7eed"){Enabled=false});tray.ContextMenuStrip=menu;
+            var menu=new ContextMenuStrip();menu.Items.Add("\u6253\u5f00\u63a7\u5236\u7a97\u53e3",null,delegate{ShowWindow();});menu.Items.Add("\u53d1\u9001\u622a\u56fe",null,async delegate{await Begin(false,false);});menu.Items.Add("\u6682\u505c",null,async delegate{await Pause(true);});menu.Items.Add("\u7ee7\u7eed",null,async delegate{await Resume();});menu.Items.Add("\u9000\u51fa",null,delegate{RequestExit("tray click");});menu.Items.Add(new ToolStripSeparator());menu.Items.Add(new ToolStripMenuItem("Ctrl+Alt+B  \u53d1\u9001\u622a\u56fe"){Enabled=false});menu.Items.Add(new ToolStripMenuItem("Ctrl+Alt+P  \u6682\u505c / \u7ee7\u7eed"){Enabled=false});tray.ContextMenuStrip=menu;
             captureTimer.Interval=SelectedIntervalMs;captureTimer.Tick+=async delegate{await CaptureTick();};pollTimer.Interval=2000;pollTimer.Tick+=async delegate{await Poll();await RefreshNetwork();};pollTimer.Start();
             scrollTimer.Interval=100;scrollTimer.Tick+=async delegate{await ScrollTick();};ready=true;
             menu.Items.Add(new ToolStripMenuItem("Ctrl+Alt+R  \u5f53\u524d\u7f51\u9875\u7ffb\u9875"){Enabled=false});
@@ -201,7 +210,7 @@ namespace BooxImages {
         internal bool RecoverWindow(){if(closing)return false;RestoreTray();ShowWindow();if(!SystemInformation.VirtualScreen.IntersectsWith(Bounds)){Location=Screen.PrimaryScreen.WorkingArea.Location;}BringToFront();return Visible&&WindowState==FormWindowState.Normal;}
         void UpdatePreview(){if(previewBytes==null)return;using(var stream=new MemoryStream(previewBytes))using(var image=Image.FromStream(stream)){var old=preview.Image;preview.Image=new Bitmap(image);if(old!=null)old.Dispose();}previewBytes=null;}
         int SelectedIntervalMs {get{return (int)(double.Parse((string)interval.SelectedItem,System.Globalization.CultureInfo.InvariantCulture)*1000);}}
-        void SaveSettings(){if(!ready)return;try{new ImageSettings {Direction=direction.SelectedIndex,Enhancement=enhancement.SelectedIndex,Grayscale=gray.Checked,Contrast=contrast.SelectedIndex,ShowCursor=showCursor.Checked,IntervalSeconds=SelectedIntervalMs/1000.0,FullScreen=fullScreen,RegionX=region.X,RegionY=region.Y,RegionWidth=region.Width,RegionHeight=region.Height,AutoScroll=autoScroll.Checked,ScrollSeconds=(double)scrollSeconds.Value,ScrollLines=(int)scrollLines.Value,ScrollMode=scrollMode.SelectedIndex,FullRefreshEvery=(int)fullRefreshEvery.Value}.Save(settingsPath);}catch(Exception e){SetStatus("\u8bbe\u7f6e\u4fdd\u5b58\u5931\u8d25: "+e.Message);}}
+        void SaveSettings(){if(!ready)return;try{new ImageSettings {Direction=direction.SelectedIndex,Enhancement=enhancement.SelectedIndex,Grayscale=gray.Checked,Contrast=contrast.SelectedIndex,ShowCursor=showCursor.Checked,IntervalSeconds=SelectedIntervalMs/1000.0,FullScreen=fullScreen,CaptureWindow=captureWindow,WindowHandle=windowTarget==null?0:windowTarget.Handle,WindowProcess=windowTarget==null?0:windowTarget.ProcessId,WindowStarted=windowTarget==null?0:windowTarget.Started,RegionX=region.X,RegionY=region.Y,RegionWidth=region.Width,RegionHeight=region.Height,AutoScroll=autoScroll.Checked,ScrollSeconds=(double)scrollSeconds.Value,ScrollLines=(int)scrollLines.Value,ScrollMode=scrollMode.SelectedIndex,FullRefreshEvery=(int)fullRefreshEvery.Value}.Save(settingsPath);}catch(Exception e){SetStatus("\u8bbe\u7f6e\u4fdd\u5b58\u5931\u8d25: "+e.Message);}}
         void StopScrolling(){scrollTimer.Stop();scroller.Stop();}
         void ArmScrolling(){ArmScrolling(IntPtr.Zero);}
         void ArmScrolling(IntPtr expected){StopScrolling();if(!automatic||!autoScroll.Checked||closing)return;string reason;if(!scroller.Arm(expected,out reason)){SetScrollStatus(reason);tray.ShowBalloonTip(3000,"BOOX",reason,ToolTipIcon.Warning);return;}scrollSteps=0;SetScrollStatus("\u5df2\u9501\u5b9a\u9605\u8bfb\u7a97\u53e3\uff1b\u7b49\u5f85\u56fe\u7247\u56de\u6267\u540e\u7ffb\u9875\u3002");nextScroll=DateTime.UtcNow.AddSeconds((double)scrollSeconds.Value);scrollTimer.Start();}
@@ -209,6 +218,7 @@ namespace BooxImages {
             if(scrollBusy)return;scrollBusy=true;int scrollGeneration=generation;string scrollSession=session;
             try {
             if(!automatic||controlling||closing){if(!automatic||closing)StopScrolling();return;}
+            if(!DesktopGuard.CanCapture(false)){StopScrolling();SetScrollStatus("屏保或锁屏期间停止翻页；窗口图片同步独立运行。");return;}
             if(!scroller.Armed){StopScrolling();SetScrollStatus("\u5df2\u5207\u6362\u7a97\u53e3\uff0c\u81ea\u52a8\u7ffb\u9875\u5df2\u505c\u6b62\uff1b\u70b9\u7ee7\u7eed\u91cd\u65b0\u9009\u5b9a\u9605\u8bfb\u7a97\u53e3\u3002");return;}
             if(DateTime.UtcNow<nextScroll||DateTime.UtcNow<retryAfter||ackHash.Length==0)return;
             string reason;if(!scroller.Step(scrollMode.SelectedIndex==1,(int)scrollLines.Value,out reason)){StopScrolling();SetScrollStatus(reason);return;}
@@ -284,12 +294,23 @@ namespace BooxImages {
         async Task SelectRegion(){
             if(controlling||closing||pairPending)return;
             await Pause();Hide();await Task.Delay(200);
-            using(var picker=new RegionPicker()){if(picker.ShowDialog()==DialogResult.OK){region=picker.Selection;hasRegion=true;fullScreen=false;UpdateRegionLabel();SaveSettings();}}
+            using(var picker=new RegionPicker()){if(picker.ShowDialog()==DialogResult.OK){region=picker.Selection;hasRegion=true;captureWindow=false;fullScreen=false;UpdateRegionLabel();SaveSettings();}}
             ShowWindow();
+        }
+        async Task SelectWindow(){
+            if(controlling||closing||pairPending)return;await Pause();if(closing)return;
+            using(var picker=new Form{Text="选择持续同步的窗口",Size=new Size(680,430),StartPosition=FormStartPosition.CenterParent,MinimizeBox=false,MaximizeBox=false}){
+                var list=new ListBox{Dock=DockStyle.Fill,HorizontalScrollbar=true};foreach(var target in WindowSource.List())list.Items.Add(target);
+                var hint=new Label{Dock=DockStyle.Top,Height=55,Text="选中网页或文档窗口后，点击开始自动。\n普通屏保遮挡时继续取图；最小化、关闭或锁屏时保留最后画面。"};
+                var ok=new Button{Text="使用此窗口",Dock=DockStyle.Bottom,Height=40};ok.Click+=delegate{if(list.SelectedItem!=null)picker.DialogResult=DialogResult.OK;};list.DoubleClick+=delegate{if(list.SelectedItem!=null)picker.DialogResult=DialogResult.OK;};
+                picker.Controls.Add(list);picker.Controls.Add(hint);picker.Controls.Add(ok);picker.AcceptButton=ok;
+                if(picker.ShowDialog(this)==DialogResult.OK){windowTarget=(WindowTarget)list.SelectedItem;captureWindow=true;fullScreen=false;hasRegion=true;regionLabel.Text="指定窗口："+windowTarget.Title;SaveSettings();SetStatus("已选定窗口；点击开始自动。请勿最小化目标窗口。");}
+            }
         }
         Task Begin(bool auto,bool resume){return BeginCore(auto,resume,IntPtr.Zero);}
         async Task BeginCore(bool auto,bool resume,IntPtr expected){
-            if(controlling||closing||pairPending)return;if(fullScreen||!hasRegion)UseFullScreen();
+            if(controlling||closing||pairPending)return;if(!captureWindow&&(fullScreen||!hasRegion))UseFullScreen();
+            if(captureWindow)try{WindowSource.Validate(windowTarget);}catch(Exception e){SetStatus(e.Message);ShowWindow();return;}
             controlling=true;automatic=false;captureTimer.Stop();StopScrolling();pending=null;generation++;
             try {
                 bool newSession=!resume||session.Length==0;
@@ -314,13 +335,17 @@ namespace BooxImages {
             captureTask=CaptureAsync();return captureTask;
         }
         async Task CaptureAsync(){
-            if(closing||!hasRegion||session.Length==0)return;
+            if(closing||(!captureWindow&&!hasRegion)||session.Length==0)return;
             capturing=true;int captureGeneration=generation;string captureSession=session;
             try {
-                if(fullScreen)UseFullScreen();Rectangle bounds=region;ImageOptions options=SnapshotOptions();lastWasCapture=true;
-                byte[] bytes=await Task.Run(delegate {using(var source=ScreenCapture.Capture(bounds,options.ShowCursor))return ImagePipeline.Encode(source,false,options);});
+                bool windowMode=captureWindow;WindowTarget target=windowTarget;
+                if(!DesktopGuard.CanCapture(windowMode)){pending=null;SetStatus(windowMode?"锁屏或桌面不可访问，保留最后画面；解锁后自动恢复。":"屏保或锁屏中，保留最后桌面；持续同步请选择窗口。");return;}
+                if(!windowMode&&fullScreen)UseFullScreen();Rectangle bounds=region;ImageOptions options=SnapshotOptions();lastWasCapture=true;
+                byte[] bytes;
+                if(windowMode){using(var source=await windowCapture.CaptureAsync(target,options.ShowCursor))bytes=await Task.Run(()=>ImagePipeline.Encode(source,false,options));}
+                else bytes=await Task.Run(delegate {if(!DesktopGuard.CanCapture(false))return null;using(var source=ScreenCapture.Capture(bounds,options.ShowCursor))return ImagePipeline.Encode(source,false,options);});
                 // A pause, new session or setting change invalidates work already in progress.
-                if(!closing&&captureGeneration==generation&&captureSession==session)Queue(bytes);
+                if(bytes!=null&&!closing&&captureGeneration==generation&&captureSession==session&&DesktopGuard.CanCapture(windowMode))Queue(bytes);
             }catch(Exception e){if(captureGeneration==generation)SetStatus(e.Message);}
             finally{capturing=false;}
         }
@@ -375,20 +400,30 @@ namespace BooxImages {
                 if(pending!=null)StartPump();
             }catch(Exception e){if(session.Length==0||automatic)SetStatus("BOOX Wi-Fi: "+e.Message);}finally{polling=false;}
         }
-        protected override async void OnFormClosing(FormClosingEventArgs e){
+        internal void RequestExit(string source){
+            if(closing)return;
+            if(EnforceProcessExit)exitDeadline=new System.Threading.Timer(delegate{Environment.Exit(0);},null,5000,System.Threading.Timeout.Infinite);
+            LogLifecycle("exit requested from "+source+"; session="+(session.Length>0));closing=true;
+            SaveSettings();captureTimer.Stop();pollTimer.Stop();StopScrolling();pending=null;generation++;
+            // Queue after the tray click/WM_CLOSE has unwound, without closing recursively.
+            BeginInvoke((Action)FinishExit);
+        }
+        async void FinishExit(){
+            try{
+                UnregisterHotKey(Handle,1);UnregisterHotKey(Handle,2);UnregisterHotKey(Handle,3);tray.Visible=false;tray.Dispose();windowCapture.Dispose();
+                if(session.Length>0){try{var pauseRequest=Control("pause");await Task.WhenAny(pauseRequest,Task.Delay(2000));if(pauseRequest.IsFaulted){var ignored=pauseRequest.Exception;}}catch{}}
+                LogLifecycle("exit network wait finished");http.CancelPendingRequests();
+            }catch(Exception e){LogLifecycle("exit cleanup error: "+e.GetType().Name);}
+            finally{closeReady=true;try{Close();}finally{Application.ExitThread();}}
+        }
+        protected override void OnFormClosing(FormClosingEventArgs e){
             if(closeReady){base.OnFormClosing(e);return;}
-            e.Cancel=true;if(closing)return;
-            LogLifecycle("exit requested; session="+(session.Length>0));
-            SaveSettings();closing=true;captureTimer.Stop();pollTimer.Stop();StopScrolling();pending=null;generation++;UnregisterHotKey(Handle,1);UnregisterHotKey(Handle,2);UnregisterHotKey(Handle,3);tray.Visible=false;tray.Dispose();
-            // Even with no session, leave the first FormClosing callback before closing again.
-            // Do not rely on nested WM_CLOSE handling; explicitly end the main message loop below.
-            await Task.Yield();
-            if(session.Length>0){try{var pauseRequest=Control("pause");await Task.WhenAny(pauseRequest,Task.Delay(2000));if(pauseRequest.IsFaulted){var ignored=pauseRequest.Exception;}}catch{}}
-            LogLifecycle("exit network wait finished");http.CancelPendingRequests();closeReady=true;Close();Application.ExitThread();
+            e.Cancel=true;RequestExit("window close");
         }
         protected override void OnFormClosed(FormClosedEventArgs e){
             LogLifecycle("form closed");
-            captureTimer.Dispose();pollTimer.Dispose();scrollTimer.Dispose();scroller.Dispose();http.Dispose();
+            captureTimer.Dispose();pollTimer.Dispose();scrollTimer.Dispose();scroller.Dispose();windowCapture.Dispose();http.Dispose();
+            if(!EnforceProcessExit&&exitDeadline!=null)exitDeadline.Dispose();
             base.OnFormClosed(e);
         }
     }

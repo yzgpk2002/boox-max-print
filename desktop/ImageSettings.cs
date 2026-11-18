@@ -12,6 +12,10 @@ namespace BooxImages {
         public bool ShowCursor {get;set;}
         public double IntervalSeconds {get;set;}
         public bool FullScreen {get;set;}
+        public bool CaptureWindow {get;set;}
+        public long WindowHandle {get;set;}
+        public int WindowProcess {get;set;}
+        public long WindowStarted {get;set;}
         public int RegionX {get;set;}
         public int RegionY {get;set;}
         public int RegionWidth {get;set;}
