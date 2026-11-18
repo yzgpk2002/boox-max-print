@@ -152,13 +152,27 @@ namespace BooxImages {
         [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr icon);
         [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr value);
         [DllImport("user32.dll")] static extern bool DrawIconEx(IntPtr dc,int x,int y,IntPtr icon,int width,int height,int step,IntPtr brush,int flags);
+        // Check the desktop pixels before overlaying the cursor or adjusting contrast.
+        internal static bool IsSolidBlack(Bitmap image) {
+            if(image.GetPixel(image.Width/2,image.Height/2).ToArgb()!=Color.Black.ToArgb())return false;
+            var data=image.LockBits(new Rectangle(Point.Empty,image.Size),ImageLockMode.ReadOnly,PixelFormat.Format24bppRgb);
+            try {
+                byte[] row=new byte[image.Width*3];
+                for(int y=0;y<image.Height;y++){
+                    Marshal.Copy(IntPtr.Add(data.Scan0,y*data.Stride),row,0,row.Length);
+                    foreach(byte channel in row)if(channel!=0)return false;
+                }
+                return true;
+            }finally{image.UnlockBits(data);}
+        }
         public static Bitmap Capture(Rectangle region,bool showCursor) {
             var image=new Bitmap(region.Width,region.Height,PixelFormat.Format24bppRgb);
             try {
                 using(var g=Graphics.FromImage(image)) {
                     g.CopyFromScreen(region.Location,Point.Empty,region.Size);
-                    if(showCursor)DrawCursor(g,region.Location);
                 }
+                if(IsSolidBlack(image)){image.Dispose();return null;}
+                if(showCursor)using(var g=Graphics.FromImage(image))DrawCursor(g,region.Location);
                 return image;
             }catch{image.Dispose();throw;}
         }

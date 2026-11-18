@@ -21,6 +21,11 @@ class WindowCaptureTests {
   using(var watchdog=new System.Threading.Timer(delegate{Console.Error.WriteLine("FAIL watchdog");Environment.Exit(2);},null,20000,Timeout.Infinite))
   using(var source=new Fixture{Text="BOOX generated capture fixture",Size=new Size(580,380),BackColor=Color.RoyalBlue,StartPosition=FormStartPosition.CenterScreen}){
    source.Shown+=async delegate{try{
+    using(var black=new Bitmap(321,80,PixelFormat.Format24bppRgb)){
+     Check(ScreenCapture.IsSolidBlack(black),"Black desktop must be held before adding cursor");
+     black.SetPixel(320,79,Color.FromArgb(0,0,1));
+     Check(!ScreenCapture.IsSolidBlack(black),"Dark content at the last pixel must survive row padding");
+    }
     Check(DesktopGuard.Allows(true,true,true,true),"Window mode must allow normal saver");
     Check(!DesktopGuard.Allows(false,true,true,true),"Desktop must reject saver");
     Check(!DesktopGuard.Allows(true,false,true,false),"Secure desktop must reject capture");

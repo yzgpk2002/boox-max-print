@@ -11,8 +11,8 @@ using System.Collections.Generic;
 using System.Web.Script.Serialization;
 using System.Runtime.InteropServices;
 
-[assembly:System.Reflection.AssemblyVersion("0.5.8.0")]
-[assembly:System.Reflection.AssemblyFileVersion("0.5.8.0")]
+[assembly:System.Reflection.AssemblyVersion("0.5.9.0")]
+[assembly:System.Reflection.AssemblyFileVersion("0.5.9.0")]
 
 namespace BooxImages {
     static class Program {
@@ -241,7 +241,47 @@ namespace BooxImages {
         ImageOptions SnapshotOptions(){return new ImageOptions {Landscape=direction.SelectedIndex==1,Grayscale=gray.Checked,Enhancement=enhancement.SelectedIndex,Contrast=float.Parse((string)contrast.SelectedItem,System.Globalization.CultureInfo.InvariantCulture),ShowCursor=showCursor.Checked};}
         void SetStatus(string text){if(!closing){transferStatus=text;status.Text=text+(scrollStatus.Length==0?"":"\n\u81ea\u52a8\u7ffb\u9875: "+scrollStatus);}}
         void SetScrollStatus(string text,bool record=true){scrollStatus=text;SetStatus(transferStatus);if(!record)return;try{string folder=Path.Combine(Path.GetDirectoryName(settingsPath),"..","logs");Directory.CreateDirectory(folder);File.AppendAllText(Path.Combine(folder,"scroll.log"),DateTime.Now.ToString("o")+" "+text+" "+scroller.Diagnostic+Environment.NewLine);}catch(IOException){}catch(UnauthorizedAccessException){}}
+        static readonly Guid displayStatus = new Guid("2b84c20e-ad23-4ddf-93db-05ffbd7efca5");
+        [DllImport("user32.dll")] static extern IntPtr RegisterPowerSettingNotification(IntPtr window, ref Guid setting, uint flags);
+        [DllImport("user32.dll")] static extern bool UnregisterPowerSettingNotification(IntPtr registration);
+        [DllImport("wtsapi32.dll")] static extern bool WTSRegisterSessionNotification(IntPtr window, uint flags);
+        [DllImport("wtsapi32.dll")] static extern bool WTSUnRegisterSessionNotification(IntPtr window);
+        IntPtr displayRegistration;
+        bool sessionRegistered, displayOff, sessionLocked;
+        int desktopEpoch;
+        protected override void OnHandleCreated(EventArgs e){
+            base.OnHandleCreated(e);
+            Guid setting = displayStatus;
+            displayRegistration = RegisterPowerSettingNotification(Handle, ref setting, 0);
+            sessionRegistered = WTSRegisterSessionNotification(Handle, 0);
+        }
+        protected override void OnHandleDestroyed(EventArgs e){
+            if(displayRegistration != IntPtr.Zero) UnregisterPowerSettingNotification(displayRegistration);
+            if(sessionRegistered) WTSUnRegisterSessionNotification(Handle);
+            base.OnHandleDestroyed(e);
+        }
+        string CaptureBlockReason(bool windowMode){
+            if(sessionLocked) return "session-locked";
+            if(!windowMode && displayOff) return "display-off";
+            return DesktopGuard.BlockReason(windowMode);
+        }
         protected override void WndProc(ref Message m){
+            if(m.Msg == 0x218 && m.WParam.ToInt64() == 0x8013 && m.LParam != IntPtr.Zero
+                && (Guid)Marshal.PtrToStructure(m.LParam, typeof(Guid)) == displayStatus && Marshal.ReadInt32(m.LParam,16) == 4){
+                bool off = Marshal.ReadInt32(m.LParam,20) == 0;
+                if(off != displayOff){
+                    displayOff = off;
+                    desktopEpoch++;
+                    if(pending != null && pending.CaptureKind == 1) pending = null;
+                    LogLifecycle(off ? "display off" : "display on");
+                }
+            }
+            if(m.Msg == 0x2B1 && (m.WParam.ToInt32() == 7 || m.WParam.ToInt32() == 8)){
+                sessionLocked = m.WParam.ToInt32() == 7;
+                desktopEpoch++;
+                if(pending != null && pending.CaptureKind != 0) pending = null;
+                LogLifecycle(sessionLocked ? "session locked" : "session unlocked");
+            }
             if(taskbarCreated!=0&&m.Msg==taskbarCreated){base.WndProc(ref m);if(ready&&!closing)BeginInvoke((Action)RestoreTray);return;}
             if(m.Msg==0x312){HandleHotkey(m.WParam.ToInt32());return;}base.WndProc(ref m);
         }
@@ -340,14 +380,15 @@ namespace BooxImages {
             capturing=true;int captureGeneration=generation;string captureSession=session;
             try {
                 bool windowMode=captureWindow;WindowTarget target=windowTarget;
-                string blocked=DesktopGuard.BlockReason(windowMode);if(captureHold!=blocked){captureHold=blocked;LogLifecycle("capture "+(blocked.Length==0?"resumed":"held: "+blocked)+"; source="+(windowMode?"window":"desktop"));}
+                int epoch=desktopEpoch;
+                string blocked=CaptureBlockReason(windowMode);if(captureHold!=blocked){captureHold=blocked;LogLifecycle("capture "+(blocked.Length==0?"resumed":"held: "+blocked)+"; source="+(windowMode?"window":"desktop"));}
                 if(blocked.Length>0){pending=null;SetStatus(windowMode?"锁屏或桌面不可访问，保留最后画面；解锁后自动恢复。":"屏保或锁屏中，保留最后桌面；持续同步请选择窗口。");return;}
                 if(!windowMode&&fullScreen)UseFullScreen();Rectangle bounds=region;ImageOptions options=SnapshotOptions();lastWasCapture=true;
                 byte[] bytes;
                 if(windowMode){using(var source=await windowCapture.CaptureAsync(target,options.ShowCursor))bytes=await Task.Run(()=>ImagePipeline.Encode(source,false,options));}
-                else bytes=await Task.Run(delegate {if(!DesktopGuard.CanCapture(false))return null;using(var source=ScreenCapture.Capture(bounds,options.ShowCursor))return ImagePipeline.Encode(source,false,options);});
+                else bytes=await Task.Run(delegate {if(!DesktopGuard.CanCapture(false))return null;using(var source=ScreenCapture.Capture(bounds,options.ShowCursor))return source==null?null:ImagePipeline.Encode(source,false,options);});
                 // A pause, new session or setting change invalidates work already in progress.
-                if(bytes!=null&&!closing&&captureGeneration==generation&&captureSession==session&&DesktopGuard.CanCapture(windowMode))QueueCapture(bytes,windowMode?2:1);
+                if(bytes!=null&&!closing&&epoch==desktopEpoch&&captureGeneration==generation&&captureSession==session&&CaptureBlockReason(windowMode).Length==0)QueueCapture(bytes,windowMode?2:1);
             }catch(Exception e){if(captureGeneration==generation)SetStatus(e.Message);}
             finally{capturing=false;}
         }
@@ -367,7 +408,7 @@ namespace BooxImages {
             try {
                 while(pending!=null&&!closing){
                     Frame frame=pending;pending=null;if(frame.Generation!=generation)continue;if(frame.Hash==ackHash)continue;
-                    if(frame.CaptureKind!=0&&!DesktopGuard.CanCapture(frame.CaptureKind==2)){SetStatus("屏保或锁屏中，已拦截待发送截图，保留 BOOX 最后画面。");continue;}
+                    if(frame.CaptureKind!=0&&CaptureBlockReason(frame.CaptureKind==2).Length!=0){SetStatus("关屏、屏保或锁屏中，保留 BOOX 最后画面。");continue;}
                     try {using(var body=new ByteArrayContent(frame.Bytes)){body.Headers.ContentType=new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");body.Headers.Add("X-Image-Session",frame.Session);body.Headers.Add("X-Image-Sequence",frame.Sequence.ToString());await Request("/frame",body);}
                         if(frame.Generation!=generation)continue;ackHash=frame.Hash;retryAfter=DateTime.MinValue;
                         previewBytes=frame.Bytes;if(Visible&&WindowState!=FormWindowState.Minimized)UpdatePreview();
