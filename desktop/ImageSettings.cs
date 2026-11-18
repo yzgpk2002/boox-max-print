@@ -13,6 +13,7 @@ namespace BooxImages {
         public double IntervalSeconds {get;set;}
         public bool FullScreen {get;set;}
         public bool CaptureWindow {get;set;}
+        public bool UpdateWindowWhileLocked {get;set;}
         public long WindowHandle {get;set;}
         public int WindowProcess {get;set;}
         public long WindowStarted {get;set;}

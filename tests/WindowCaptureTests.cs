@@ -33,6 +33,14 @@ class WindowCaptureTests {
     WindowTarget target;using(var p=Process.GetCurrentProcess())target=new WindowTarget{Handle=source.Handle.ToInt64(),ProcessId=p.Id,Started=p.StartTime.ToUniversalTime().Ticks};
     using(var capture=new WindowCaptureClient()){
      using(var first=await capture.CaptureAsync(target,false))Check(first.GetPixel(first.Width/2,first.Height/2).ToArgb()==Color.RoyalBlue.ToArgb(),"First capture pixel");
+     source.BackColor=Color.Goldenrod;source.Refresh();
+     using(var changed=await capture.CaptureAsync(target,false,true))Check(changed.GetPixel(changed.Width/2,changed.Height/2).ToArgb()==Color.Goldenrod.ToArgb(),"Bound window redraw must return changed pixels");
+     using(var unbound=new WindowCaptureClient()){
+      bool rejected=false;
+      try{using(var unexpected=await unbound.CaptureAsync(target,false,true)){}}
+      catch(InvalidOperationException){rejected=true;}
+      Check(rejected,"Lock mode must reject a fresh helper without a pre-lock frame");
+     }
      using(var overlay=new Form{Text="BOOX owned occlusion fixture",Bounds=source.Bounds,StartPosition=FormStartPosition.Manual,BackColor=Color.Red}){
       overlay.Show();source.BackColor=Color.ForestGreen;source.Invalidate();await Task.Delay(150);
       using(var second=await capture.CaptureAsync(target,false)){Check(second.GetPixel(second.Width/2,second.Height/2).ToArgb()==Color.ForestGreen.ToArgb(),"Occluded update must show source, not red overlay");second.Save("build/window-capture-second.png",ImageFormat.Png);}

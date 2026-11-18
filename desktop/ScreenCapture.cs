@@ -100,14 +100,14 @@ namespace BooxImages {
             if(pid!=target.ProcessId||!IsWindowVisible(h)||IsIconic(h))throw new InvalidOperationException("选定窗口已关闭、隐藏或最小化；保留最后画面，请恢复或重新选择窗口。");
             using(var process=Process.GetProcessById((int)pid))if(process.StartTime.ToUniversalTime().Ticks!=target.Started)throw new InvalidOperationException("原窗口已结束，请重新选择窗口。");
         }
-        public static Bitmap Capture(WindowTarget target,bool cursor){
-            Validate(target);if(!DesktopGuard.CanCapture(true))throw new InvalidOperationException("当前桌面不可捕获。");
+        public static Bitmap Capture(WindowTarget target,bool cursor,bool redrawBoundWindow=false){
+            Validate(target);if(!redrawBoundWindow && !DesktopGuard.CanCapture(true))throw new InvalidOperationException("当前桌面不可捕获。");
             IntPtr window=new IntPtr(target.Handle);Rect r;if(!GetWindowRect(window,out r))throw new InvalidOperationException("无法读取窗口大小。");
             int width=r.Right-r.Left,height=r.Bottom-r.Top;if(width<20||height<20||width>12000||height>12000||(long)width*height>40000000)throw new InvalidOperationException("窗口大小不支持。");
             var bitmap=new Bitmap(width,height,PixelFormat.Format24bppRgb);
             try{
                 using(var g=Graphics.FromImage(bitmap)){g.Clear(Color.Magenta);IntPtr dc=g.GetHdc();bool ok;try{ok=PrintWindow(window,dc,2);}finally{g.ReleaseHdc(dc);}if(!ok)throw new InvalidOperationException("此窗口不支持后台捕获。");if(cursor)ScreenCapture.DrawCursor(g,new Point(r.Left,r.Top));}
-                Validate(target);if(!DesktopGuard.CanCapture(true))throw new InvalidOperationException("桌面已切换，丢弃本帧。");
+                Validate(target);if(!redrawBoundWindow && !DesktopGuard.CanCapture(true))throw new InvalidOperationException("桌面已切换，丢弃本帧。");
                 // Reject a completely unpainted or black result (common with unsupported GPU windows).
                 bool allBlack=true,unpainted=true;for(int y=1;y<12;y++)for(int x=1;x<12;x++){Color c=bitmap.GetPixel(width*x/12,height*y/12);allBlack&=c.R==0&&c.G==0&&c.B==0;unpainted&=c.R==255&&c.G==0&&c.B==255;}
                 if(allBlack||unpainted)throw new InvalidOperationException("窗口返回空白画面；保留最后画面，请恢复窗口或使用整屏。");return bitmap;
@@ -116,11 +116,14 @@ namespace BooxImages {
     }
     // PrintWindow can block inside another application. A separate owned process bounds that wait.
     public sealed class WindowCaptureClient:IDisposable {
+        sealed class WindowNotReady : InvalidOperationException {
+            public WindowNotReady(string message):base(message){}
+        }
         readonly object gate=new object();Process child;bool disposed;DateTime retryAfter;
         readonly string executable;
         public WindowCaptureClient():this(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"BooxWindowCapture.exe")){}
         internal WindowCaptureClient(string executablePath){executable=executablePath;}
-        public async Task<Bitmap> CaptureAsync(WindowTarget target,bool cursor){
+        public async Task<Bitmap> CaptureAsync(WindowTarget target,bool cursor,bool locked=false){
             WindowSource.Validate(target);Process current;
             lock(gate){if(disposed)throw new ObjectDisposedException("WindowCaptureClient");if(DateTime.UtcNow<retryAfter)throw new InvalidOperationException("窗口捕获暂缓重试，保留最后画面。");
                 if(child==null||child.HasExited){if(child!=null)child.Dispose();using(var parent=Process.GetCurrentProcess()){
@@ -128,12 +131,16 @@ namespace BooxImages {
                 }}current=child;
             }
             var read=Task.Run(delegate{
-                current.StandardInput.WriteLine(target.Handle+" "+target.ProcessId+" "+target.Started+" "+(cursor?1:0));current.StandardInput.Flush();
-                var reader=new BinaryReader(current.StandardOutput.BaseStream);int length=reader.ReadInt32();if(length<0)throw new InvalidOperationException(reader.ReadString());if(length<1||length>64000000)throw new IOException("Invalid capture size");byte[] bytes=reader.ReadBytes(length);if(bytes.Length!=length)throw new EndOfStreamException();return bytes;
+                current.StandardInput.WriteLine(target.Handle+" "+target.ProcessId+" "+target.Started+" "+(cursor&&!locked?1:0)+" "+(locked?1:0));current.StandardInput.Flush();
+                var reader=new BinaryReader(current.StandardOutput.BaseStream);int length=reader.ReadInt32();if(length<0)throw new WindowNotReady(reader.ReadString());if(length<1||length>64000000)throw new IOException("Invalid capture size");byte[] bytes=reader.ReadBytes(length);if(bytes.Length!=length)throw new EndOfStreamException();return bytes;
             });
             try{
                 if(await Task.WhenAny(read,Task.Delay(1800))!=read)throw new TimeoutException("窗口响应超时，保留最后画面；稍后自动重试。");
                 byte[] bytes=await read;using(var stream=new MemoryStream(bytes))using(var image=Image.FromStream(stream))return new Bitmap(image);
+            }catch(WindowNotReady){
+                // A complete error reply leaves the helper and its pre-lock binding usable.
+                retryAfter=DateTime.UtcNow.AddSeconds(1);
+                throw;
             }catch{
                 lock(gate){if(child==current){StopChild();retryAfter=DateTime.UtcNow.AddSeconds(3);}}
                 ObserveFailure(read);throw;

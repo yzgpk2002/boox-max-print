@@ -11,8 +11,8 @@ using System.Collections.Generic;
 using System.Web.Script.Serialization;
 using System.Runtime.InteropServices;
 
-[assembly:System.Reflection.AssemblyVersion("0.5.9.0")]
-[assembly:System.Reflection.AssemblyFileVersion("0.5.9.0")]
+[assembly:System.Reflection.AssemblyVersion("0.5.10.0")]
+[assembly:System.Reflection.AssemblyFileVersion("0.5.10.0")]
 
 namespace BooxImages {
     static class Program {
@@ -81,6 +81,7 @@ namespace BooxImages {
         System.Threading.Timer exitDeadline;
         readonly WindowCaptureClient windowCapture=new WindowCaptureClient();
         WindowTarget windowTarget;bool captureWindow;
+        readonly CheckBox updateWhileLocked = new CheckBox { Text="锁屏时尝试更新选定窗口", AutoSize=true, Margin=new Padding(12,7,4,0) };
         string captureHold="";
         string scrollStatus="",transferStatus="";long scrollSteps;
         readonly string settingsPath;
@@ -153,6 +154,9 @@ namespace BooxImages {
             autoScroll.CheckedChanged+=delegate{SaveSettings();StopScrolling();SetScrollStatus(autoScroll.Checked?"\u5df2\u542f\u7528\uff1b\u5728\u9605\u8bfb\u6b63\u6587\u6309 Ctrl+Alt+R \u542f\u52a8\u3002":"\u672a\u542f\u7528\u3002");};
             scrollSeconds.ValueChanged+=delegate{SaveSettings();nextScroll=DateTime.UtcNow.AddSeconds((double)scrollSeconds.Value);};
             scrollLines.ValueChanged+=delegate{SaveSettings();};scrollMode.SelectedIndexChanged+=delegate{scrollLines.Enabled=scrollMode.SelectedIndex==0;SaveSettings();};
+            options.Controls.Add(updateWhileLocked);
+            updateWhileLocked.Checked=saved.UpdateWindowWhileLocked;
+            updateWhileLocked.CheckedChanged+=delegate{desktopEpoch++;pending=null;SaveSettings();};
             var refreshOptions=new FlowLayoutPanel {Dock=DockStyle.Fill};layout.Controls.Add(refreshOptions);
             refreshOptions.Controls.Add(new Label{Text="\u6bcf\u9001\u8fbe",AutoSize=true,Margin=new Padding(3,8,4,0)});
             fullRefreshEvery.Minimum=0;fullRefreshEvery.Maximum=1000;fullRefreshEvery.Width=70;fullRefreshEvery.Value=saved.FullRefreshEvery;refreshOptions.Controls.Add(fullRefreshEvery);
@@ -165,7 +169,7 @@ namespace BooxImages {
             Rectangle restoredRegion;if(saved.TryRestoreRegion(SystemInformation.VirtualScreen,out restoredRegion)){region=restoredRegion;hasRegion=true;fullScreen=false;UpdateRegionLabel();}else{fullScreen=true;UseFullScreen();}
             if(saved.CaptureWindow){captureWindow=true;fullScreen=false;windowTarget=new WindowTarget{Handle=saved.WindowHandle,ProcessId=saved.WindowProcess,Started=saved.WindowStarted};regionLabel.Text="指定窗口（已记住）；原窗口关闭后请重新选择，不会自动改为整屏。";}
             preview.Dock=DockStyle.Fill;preview.SizeMode=PictureBoxSizeMode.Zoom;preview.BackColor=Color.FromArgb(240,240,240);layout.Controls.Add(preview);
-            status.Dock=DockStyle.Fill;status.Text=captureWindow?"就绪。指定窗口可在普通屏保遮挡时继续同步；请勿最小化目标窗口。":"就绪。整屏/选区遇屏保保留最后画面；屏保期间持续更新请选择窗口。";layout.Controls.Add(status);
+            status.Dock=DockStyle.Fill;status.Text=captureWindow?"就绪。已恢复指定窗口。请勿最小化目标窗口。":"就绪。整屏/选区遇屏保保留最后画面；屏保期间持续更新请选择窗口。";layout.Controls.Add(status);
             var connection=new Panel{Dock=DockStyle.Fill};networkLabel.Dock=DockStyle.Fill;networkLabel.AutoEllipsis=true;networkLabel.Text="\u6b63\u5728\u68c0\u6d4b\u7535\u8111\u4e0e BOOX \u7684 Wi-Fi...";connection.Controls.Add(networkLabel);
             pairButton.Text="\u91cd\u65b0\u914d\u5bf9 (USB)";pairButton.Dock=DockStyle.Right;pairButton.Width=150;pairButton.Click+=async delegate{await RePair();};connection.Controls.Add(pairButton);layout.Controls.Add(connection);
             tray.Icon=trayIcon;tray.Text="BOOX Max \u56fe\u7247";tray.Visible=true;tray.DoubleClick+=delegate{ShowWindow();};
@@ -211,7 +215,7 @@ namespace BooxImages {
         internal bool RecoverWindow(){if(closing)return false;RestoreTray();ShowWindow();if(!SystemInformation.VirtualScreen.IntersectsWith(Bounds)){Location=Screen.PrimaryScreen.WorkingArea.Location;}BringToFront();return Visible&&WindowState==FormWindowState.Normal;}
         void UpdatePreview(){if(previewBytes==null)return;using(var stream=new MemoryStream(previewBytes))using(var image=Image.FromStream(stream)){var old=preview.Image;preview.Image=new Bitmap(image);if(old!=null)old.Dispose();}previewBytes=null;}
         int SelectedIntervalMs {get{return (int)(double.Parse((string)interval.SelectedItem,System.Globalization.CultureInfo.InvariantCulture)*1000);}}
-        void SaveSettings(){if(!ready)return;try{new ImageSettings {Direction=direction.SelectedIndex,Enhancement=enhancement.SelectedIndex,Grayscale=gray.Checked,Contrast=contrast.SelectedIndex,ShowCursor=showCursor.Checked,IntervalSeconds=SelectedIntervalMs/1000.0,FullScreen=fullScreen,CaptureWindow=captureWindow,WindowHandle=windowTarget==null?0:windowTarget.Handle,WindowProcess=windowTarget==null?0:windowTarget.ProcessId,WindowStarted=windowTarget==null?0:windowTarget.Started,RegionX=region.X,RegionY=region.Y,RegionWidth=region.Width,RegionHeight=region.Height,AutoScroll=autoScroll.Checked,ScrollSeconds=(double)scrollSeconds.Value,ScrollLines=(int)scrollLines.Value,ScrollMode=scrollMode.SelectedIndex,FullRefreshEvery=(int)fullRefreshEvery.Value}.Save(settingsPath);}catch(Exception e){SetStatus("\u8bbe\u7f6e\u4fdd\u5b58\u5931\u8d25: "+e.Message);}}
+        void SaveSettings(){if(!ready)return;try{new ImageSettings {Direction=direction.SelectedIndex,Enhancement=enhancement.SelectedIndex,Grayscale=gray.Checked,Contrast=contrast.SelectedIndex,ShowCursor=showCursor.Checked,IntervalSeconds=SelectedIntervalMs/1000.0,UpdateWindowWhileLocked=updateWhileLocked.Checked,FullScreen=fullScreen,CaptureWindow=captureWindow,WindowHandle=windowTarget==null?0:windowTarget.Handle,WindowProcess=windowTarget==null?0:windowTarget.ProcessId,WindowStarted=windowTarget==null?0:windowTarget.Started,RegionX=region.X,RegionY=region.Y,RegionWidth=region.Width,RegionHeight=region.Height,AutoScroll=autoScroll.Checked,ScrollSeconds=(double)scrollSeconds.Value,ScrollLines=(int)scrollLines.Value,ScrollMode=scrollMode.SelectedIndex,FullRefreshEvery=(int)fullRefreshEvery.Value}.Save(settingsPath);}catch(Exception e){SetStatus("\u8bbe\u7f6e\u4fdd\u5b58\u5931\u8d25: "+e.Message);}}
         void StopScrolling(){scrollTimer.Stop();scroller.Stop();}
         void ArmScrolling(){ArmScrolling(IntPtr.Zero);}
         void ArmScrolling(IntPtr expected){StopScrolling();if(!automatic||!autoScroll.Checked||closing)return;string reason;if(!scroller.Arm(expected,out reason)){SetScrollStatus(reason);tray.ShowBalloonTip(3000,"BOOX",reason,ToolTipIcon.Warning);return;}scrollSteps=0;SetScrollStatus("\u5df2\u9501\u5b9a\u9605\u8bfb\u7a97\u53e3\uff1b\u7b49\u5f85\u56fe\u7247\u56de\u6267\u540e\u7ffb\u9875\u3002");nextScroll=DateTime.UtcNow.AddSeconds((double)scrollSeconds.Value);scrollTimer.Start();}
@@ -261,7 +265,7 @@ namespace BooxImages {
             base.OnHandleDestroyed(e);
         }
         string CaptureBlockReason(bool windowMode){
-            if(sessionLocked) return "session-locked";
+            if(sessionLocked) return windowMode && captureWindow && updateWhileLocked.Checked ? "" : "session-locked";
             if(!windowMode && displayOff) return "display-off";
             return DesktopGuard.BlockReason(windowMode);
         }
@@ -342,7 +346,7 @@ namespace BooxImages {
             if(controlling||closing||pairPending)return;await Pause();if(closing)return;
             using(var picker=new Form{Text="选择持续同步的窗口",Size=new Size(680,430),StartPosition=FormStartPosition.CenterParent,MinimizeBox=false,MaximizeBox=false}){
                 var list=new ListBox{Dock=DockStyle.Fill,HorizontalScrollbar=true};foreach(var target in WindowSource.List())list.Items.Add(target);
-                var hint=new Label{Dock=DockStyle.Top,Height=55,Text="选中网页或文档窗口后，点击开始自动。\n普通屏保遮挡时继续取图；最小化、关闭或锁屏时保留最后画面。"};
+                var hint=new Label{Dock=DockStyle.Top,Height=55,Text="选中网页或文档窗口后，点击开始自动。\n锁屏时如需尝试更新，请勾选“锁屏时尝试更新选定窗口”。"};
                 var ok=new Button{Text="使用此窗口",Dock=DockStyle.Bottom,Height=40};ok.Click+=delegate{if(list.SelectedItem!=null)picker.DialogResult=DialogResult.OK;};list.DoubleClick+=delegate{if(list.SelectedItem!=null)picker.DialogResult=DialogResult.OK;};
                 picker.Controls.Add(list);picker.Controls.Add(hint);picker.Controls.Add(ok);picker.AcceptButton=ok;
                 if(picker.ShowDialog(this)==DialogResult.OK){windowTarget=(WindowTarget)list.SelectedItem;captureWindow=true;fullScreen=false;hasRegion=true;regionLabel.Text="指定窗口："+windowTarget.Title;SaveSettings();SetStatus("已选定窗口；点击开始自动。请勿最小化目标窗口。");}
@@ -385,7 +389,7 @@ namespace BooxImages {
                 if(blocked.Length>0){pending=null;SetStatus(windowMode?"锁屏或桌面不可访问，保留最后画面；解锁后自动恢复。":"屏保或锁屏中，保留最后桌面；持续同步请选择窗口。");return;}
                 if(!windowMode&&fullScreen)UseFullScreen();Rectangle bounds=region;ImageOptions options=SnapshotOptions();lastWasCapture=true;
                 byte[] bytes;
-                if(windowMode){using(var source=await windowCapture.CaptureAsync(target,options.ShowCursor))bytes=await Task.Run(()=>ImagePipeline.Encode(source,false,options));}
+                if(windowMode){using(var source=await windowCapture.CaptureAsync(target,options.ShowCursor,sessionLocked && updateWhileLocked.Checked))bytes=await Task.Run(()=>ImagePipeline.Encode(source,false,options));}
                 else bytes=await Task.Run(delegate {if(!DesktopGuard.CanCapture(false))return null;using(var source=ScreenCapture.Capture(bounds,options.ShowCursor))return source==null?null:ImagePipeline.Encode(source,false,options);});
                 // A pause, new session or setting change invalidates work already in progress.
                 if(bytes!=null&&!closing&&epoch==desktopEpoch&&captureGeneration==generation&&captureSession==session&&CaptureBlockReason(windowMode).Length==0)QueueCapture(bytes,windowMode?2:1);
